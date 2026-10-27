@@ -19,7 +19,7 @@ jobs:
           distribution: temurin
           java-version: "17"
       - name: Install
-        run: pip install -e ".[dev,stream,spark]"
+        run: pip install -e ".[dev,stream,spark,ml]"
       - name: Lint
         run: |
           ruff check src tests scripts notebooks
@@ -32,3 +32,4 @@ jobs:
           python scripts/build_reference_data.py --mock
           python scripts/profile_data.py
           python scripts/run_producer.py --sink file --max-events 20000
+          python scripts/train_local.py --mock --only logreg_full xgb_full_d4

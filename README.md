@@ -21,8 +21,8 @@ positives per 1,000 transactions")._
 | 2b | Watchlist redesign after profiling (one ~2-day fraud burst per card → fast hot-list) | ✅ |
 | 3 | Kafka producer → Databricks bronze | ✅ |
 | 4 | Silver / gold (point-in-time features, watchlist join) | ✅ |
-| 5 | Models: logistic regression baseline vs XGBoost (MLflow) | ⏳ next |
-| 6 | Business evaluation: PR-AUC, recall@capacity, cost, CIs | |
+| 5 | Models: logistic regression baseline vs XGBoost (MLflow) | ✅ |
+| 6 | Business evaluation: PR-AUC, recall@capacity, cost, CIs | ⏳ next |
 | 7 | Alerting (email) + FastAPI batch scoring | |
 | 8 | Investigation dashboard (Streamlit) | |
 | 9 | GenAI investigation assistant (RAG over SOPs) + eval | |
@@ -147,8 +147,9 @@ python scripts/run_producer.py --start 2019-01-01 --end 2020-07-01 --speed max
 
 # In Databricks: run 03_silver, then 04_gold_features
 
-# "Live" test period: 1 simulated day every 10 seconds (~30 min for 6 months)
-python scripts/run_producer.py --start 2020-07-01 --end 2021-01-01 --speed 1d/10s
+# Rest of the data (test period + every label that matures after July 2020)
+python scripts/run_producer.py --start 2020-07-01 --speed max
+# In Databricks: 01_bronze_ingest -> 03_silver -> 04_gold_features -> 05_train_models
 ```
 
 Notes
@@ -175,6 +176,28 @@ Notes
   (1) Spark features equal an independent pandas implementation and (2) perturbing future
   transactions leaves every earlier row's features unchanged.
 
+## Models (Step 5)
+
+`05_train_models` (Databricks) and `scripts/train_local.py` (laptop) run the same code
+from `src/sentinel/models/`:
+
+| Experiment | Model | Features |
+|---|---|---|
+| `logreg_full` / `logreg_no_watchlist` | L2 logistic regression on log-scaled, standardised features | with / without watchlist |
+| `xgb_full_d4`, `_d6`, `_d8` | XGBoost, early stopping on validation PR-AUC | full |
+| `xgb_no_watchlist` | XGBoost | without watchlist (ablation) |
+
+- **Train:** `train` split, `label_at_cutoff`; negatives down-sampled to 25% with weight 4 so
+  probabilities keep their original scale.
+- **Select:** `valid` split, `label_final`, by PR-AUC. Also reported: recall/precision at a
+  daily review budget of 100 and 25 alerts, both as each day's top-K (upper bound) and with a
+  single fixed threshold fitted on validation (what a live system can do), plus false
+  positives per 1,000 transactions and share of fraud *dollars* caught.
+- **Track:** every run in MLflow (params, metrics, PR curve, feature importance, model with
+  signature). Best PR-AUC is registered in Unity Catalog as `fraud_model@champion`; best
+  logistic regression as `fraud_model@baseline`, with capacity thresholds as version tags.
+- **Untouched:** the `test` split is first used in Step 6.
+
 ## Repo layout
 
 ```
@@ -183,7 +206,9 @@ src/sentinel/common/         config loader, Kafka event contracts
 src/sentinel/data/           loader, label feed, watchlist, mock generator
 src/sentinel/streaming/      Kafka producer (sim-time replay) and sinks (Kafka / file / memory)
 src/sentinel/features/       pandas reference implementation of gold features (for tests)
-notebooks/databricks/        00_setup, 01_bronze_ingest, 02_load_reference, 03_silver, 04_gold_features
+src/sentinel/models/         feature sets, LR/XGBoost pipelines, experiment runner, MLflow logging
+src/sentinel/evaluation/     PR-AUC, recall/precision at daily capacity, capacity thresholds
+notebooks/databricks/        00_setup … 04_gold_features, 05_train_models
 scripts/                     download, build reference data, profile, producer, deploy/upload
 schemas/                     JSON Schemas for Kafka topics
 docs/                        data profile, feature dictionary, SOPs (for the GenAI assistant)
