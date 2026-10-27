@@ -1,0 +1,34 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - uses: actions/setup-java@v4  # local Spark for notebook transform tests
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Install
+        run: pip install -e ".[dev,stream,spark]"
+      - name: Lint
+        run: |
+          ruff check src tests scripts notebooks
+          ruff format --check src tests scripts
+      - name: Unit tests (mock data, local Spark, no Kafka/Kaggle needed)
+        run: pytest -q
+      - name: Smoke-run data layer + producer dry run on mock data
+        run: |
+          python scripts/make_mock_data.py
+          python scripts/build_reference_data.py --mock
+          python scripts/profile_data.py
+          python scripts/run_producer.py --sink file --max-events 20000

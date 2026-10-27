@@ -1,0 +1,177 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "transaction_id": {
+      "minLength": 1,
+      "title": "Transaction Id",
+      "type": "string"
+    },
+    "event_time": {
+      "format": "date-time",
+      "title": "Event Time",
+      "type": "string"
+    },
+    "card_id": {
+      "pattern": "^card_[0-9a-f]{12}$",
+      "title": "Card Id",
+      "type": "string"
+    },
+    "merchant_id": {
+      "pattern": "^mer_[0-9a-f]{10}$",
+      "title": "Merchant Id",
+      "type": "string"
+    },
+    "merchant_name": {
+      "title": "Merchant Name",
+      "type": "string"
+    },
+    "category": {
+      "title": "Category",
+      "type": "string"
+    },
+    "amount": {
+      "exclusiveMaximum": 1000000,
+      "exclusiveMinimum": 0,
+      "title": "Amount",
+      "type": "number"
+    },
+    "currency": {
+      "const": "USD",
+      "default": "USD",
+      "title": "Currency",
+      "type": "string"
+    },
+    "gender": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Gender"
+    },
+    "age_at_txn": {
+      "anyOf": [
+        {
+          "maximum": 120,
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Age At Txn"
+    },
+    "job": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Job"
+    },
+    "city": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "City"
+    },
+    "state": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "State"
+    },
+    "zip": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Zip"
+    },
+    "cust_lat": {
+      "maximum": 90,
+      "minimum": -90,
+      "title": "Cust Lat",
+      "type": "number"
+    },
+    "cust_long": {
+      "maximum": 180,
+      "minimum": -180,
+      "title": "Cust Long",
+      "type": "number"
+    },
+    "city_pop": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "City Pop"
+    },
+    "merch_lat": {
+      "maximum": 90,
+      "minimum": -90,
+      "title": "Merch Lat",
+      "type": "number"
+    },
+    "merch_long": {
+      "maximum": 180,
+      "minimum": -180,
+      "title": "Merch Long",
+      "type": "number"
+    }
+  },
+  "required": [
+    "transaction_id",
+    "event_time",
+    "card_id",
+    "merchant_id",
+    "merchant_name",
+    "category",
+    "amount",
+    "cust_lat",
+    "cust_long",
+    "merch_lat",
+    "merch_long"
+  ],
+  "title": "TransactionEvent",
+  "type": "object"
+}

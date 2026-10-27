@@ -1,0 +1,49 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "transaction_id": {
+      "minLength": 1,
+      "title": "Transaction Id",
+      "type": "string"
+    },
+    "event_time": {
+      "format": "date-time",
+      "title": "Event Time",
+      "type": "string"
+    },
+    "label_known_at": {
+      "format": "date-time",
+      "title": "Label Known At",
+      "type": "string"
+    },
+    "label": {
+      "const": "fraud",
+      "title": "Label",
+      "type": "string"
+    },
+    "label_source": {
+      "enum": [
+        "chargeback",
+        "customer_report",
+        "investigation"
+      ],
+      "title": "Label Source",
+      "type": "string"
+    }
+  },
+  "required": [
+    "transaction_id",
+    "event_time",
+    "label_known_at",
+    "label",
+    "label_source"
+  ],
+  "title": "FraudLabelEvent",
+  "type": "object"
+}

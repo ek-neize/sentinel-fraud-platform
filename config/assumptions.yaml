@@ -1,0 +1,69 @@
+# ---------------------------------------------------------------------------
+# Sentinel business assumptions — the ONLY place cost / capacity numbers live.
+# Every dollar figure in reports and dashboards must trace back to this file.
+# Numbers are illustrative; change them and re-run evaluation to see impact.
+# ---------------------------------------------------------------------------
+
+capacity:
+  # Investigator team can review this many alerts per calendar day.
+  alerts_per_day: 100
+  # Tighter scenario reported alongside the main one.
+  alerts_per_day_tight: 25
+
+costs:
+  # Fully loaded analyst cost to review one alert (salary + tooling), USD.
+  investigation_cost_per_alert: 25.0
+  # Extra cost when a review escalates to a full case (customer contact, etc.).
+  escalation_cost_per_case: 75.0
+  # Share of a missed fraud's amount the institution ultimately loses
+  # (after chargebacks / merchant liability). 1.0 = full loss.
+  missed_fraud_loss_rate: 0.85
+  # Fixed overhead per missed fraud (chargeback handling, card reissue).
+  missed_fraud_fixed_cost: 15.0
+  # Customer-friction cost of a false positive that leads to a card block.
+  false_positive_friction_cost: 5.0
+
+detection:
+  # Share of a caught fraud's amount that is actually prevented/recovered.
+  caught_fraud_recovery_rate: 0.90
+
+labels:
+  # Fraud labels are not known at transaction time. Two channels deliver them:
+  channels:
+    customer_report:          # cardholder notices (SMS alert / statement) and calls in
+      share: 0.6
+      lag_hours_min: 2
+      lag_hours_max: 72
+    chargeback:               # formal dispute, much slower
+      share: 0.4
+      lag_days_min: 15
+      lag_days_max: 60
+
+watchlist:
+  # --- Card hot-list: operations lists a card soon after its first fraud label.
+  card_listing_rate: 0.9      # share of reported cards actually hot-listed
+  card_listing_lag_hours_min: 1
+  card_listing_lag_hours_max: 12
+  card_ttl_days: 14           # card monitored for two weeks, then reissued/cleared
+  # --- Merchant risk list: re-evaluated on a schedule from labels known so far.
+  merchant_review_every_days: 30
+  merchant_window_days: 90    # trailing window for the merchant fraud rate
+  merchant_min_txns: 200      # ignore merchants with too little volume
+  merchant_rate_multiplier: 5.0   # list if rate >= multiplier x global known rate
+  merchant_listing_lag_days_min: 1
+  merchant_listing_lag_days_max: 5
+  merchant_ttl_days: 60
+  # --- Noise: clean entities listed by mistake (e.g. unverified external lists).
+  noise_cards: 10
+  noise_merchants: 5
+  noise_ttl_days: 30
+
+split:
+  # Chronological split. Gap month absorbs label lag & boundary leakage.
+  train_start: "2019-01-01"
+  train_end: "2020-03-01"     # exclusive
+  gap_end: "2020-04-01"       # exclusive; Mar 2020 unused
+  valid_end: "2020-07-01"     # exclusive
+  test_end: "2021-01-01"      # exclusive
+
+random_seed: 42
