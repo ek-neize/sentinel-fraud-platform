@@ -5,7 +5,6 @@ cell titled 'Transforms' so the parsing and data-quality rules are covered by CI
 """
 
 import json
-import re
 from datetime import datetime
 from pathlib import Path
 
@@ -15,33 +14,13 @@ pyspark = pytest.importorskip("pyspark")
 
 from sentinel.streaming.producer import replay  # noqa: E402
 from sentinel.streaming.sinks import MemorySink  # noqa: E402
+from tests.notebook_utils import load_cell  # noqa: E402
 
 NOTEBOOK = Path(__file__).resolve().parents[1] / "notebooks" / "databricks" / "01_bronze_ingest.py"
 
 
 def _load_transforms() -> dict:
-    src = NOTEBOOK.read_text()
-    cells = re.split(r"^# COMMAND -+$", src, flags=re.M)
-    cell = next(c for c in cells if "# DBTITLE 1,Transforms" in c)
-    ns: dict = {}
-    exec(compile(cell, str(NOTEBOOK), "exec"), ns)
-    return ns
-
-
-@pytest.fixture(scope="module")
-def spark():
-    from pyspark.sql import SparkSession
-
-    s = (
-        SparkSession.builder.master("local[1]")
-        .appName("sentinel-tests")
-        .config("spark.sql.session.timeZone", "UTC")
-        .config("spark.ui.enabled", "false")
-        .config("spark.sql.shuffle.partitions", "1")
-        .getOrCreate()
-    )
-    yield s
-    s.stop()
+    return load_cell(NOTEBOOK.name, "Transforms")
 
 
 @pytest.fixture(scope="module")

@@ -33,3 +33,27 @@ def labels(txns, cfg) -> pd.DataFrame:
 @pytest.fixture(scope="session")
 def watchlist(txns, labels, cfg) -> pd.DataFrame:
     return build_watchlist(txns, labels, cfg["watchlist"], seed=1)
+
+
+@pytest.fixture(scope="session")
+def spark():
+    """One local Spark session for all notebook-transform tests (skipped without pyspark)."""
+    pytest.importorskip("pyspark")
+    import os
+    import time
+
+    os.environ["TZ"] = "UTC"  # pandas naive timestamps must not shift across DST
+    time.tzset()
+    from pyspark.sql import SparkSession
+
+    s = (
+        SparkSession.builder.master("local[2]")
+        .appName("sentinel-tests")
+        .config("spark.sql.session.timeZone", "UTC")
+        .config("spark.ui.enabled", "false")
+        .config("spark.sql.shuffle.partitions", "4")
+        .config("spark.driver.extraJavaOptions", "-Duser.timezone=UTC")
+        .getOrCreate()
+    )
+    yield s
+    s.stop()

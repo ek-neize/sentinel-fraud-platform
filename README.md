@@ -20,8 +20,8 @@ positives per 1,000 transactions")._
 | 2 | Data layer: download, canonical schema, label lag, watchlist, event contract, profile | ✅ |
 | 2b | Watchlist redesign after profiling (one ~2-day fraud burst per card → fast hot-list) | ✅ |
 | 3 | Kafka producer → Databricks bronze | ✅ |
-| 4 | Silver / gold (point-in-time features, watchlist join) | ⏳ next |
-| 5 | Models: logistic regression baseline vs XGBoost (MLflow) | |
+| 4 | Silver / gold (point-in-time features, watchlist join) | ✅ |
+| 5 | Models: logistic regression baseline vs XGBoost (MLflow) | ⏳ next |
 | 6 | Business evaluation: PR-AUC, recall@capacity, cost, CIs | |
 | 7 | Alerting (email) + FastAPI batch scoring | |
 | 8 | Investigation dashboard (Streamlit) | |
@@ -48,16 +48,24 @@ flowchart LR
         B1[(bronze_transactions)]
         B2[(bronze_labels)]
         RW[(ref_watchlist)]
-        S[(silver / gold<br/>Step 4)]
+        ST[(silver_transactions<br/>dedup + watchlist flags)]
+        SL[(silver_labels)]
+        SQ[(silver_quarantine)]
+        GF[(gold_features<br/>strictly-prior history)]
+        GT[(gold_training_set<br/>split + as-of labels)]
     end
     P -- SASL_SSL, idempotent --> T1
     P -- label at label_known_at --> T2
     T1 -- Structured Streaming<br/>availableNow --> B1
     T2 -- Structured Streaming --> B2
     WL -- CLI upload to Volume --> RW
-    B1 --> S
-    B2 --> S
-    RW -- point-in-time join --> S
+    B1 -- MERGE on transaction_id --> ST
+    B1 -- dq_errors --> SQ
+    B2 --> SL
+    RW -- point-in-time join --> ST
+    ST -- window features --> GF
+    GF --> GT
+    SL -- label_at_cutoff / label_final --> GT
 ```
 
 ## Data
@@ -137,6 +145,8 @@ scripts/upload_reference.sh                      # watchlist -> landing volume
 python scripts/run_producer.py --start 2019-01-01 --end 2020-07-01 --speed max
 # In Databricks: run 01_bronze_ingest  (availableNow; rerun any time to pick up new events)
 
+# In Databricks: run 03_silver, then 04_gold_features
+
 # "Live" test period: 1 simulated day every 10 seconds (~30 min for 6 months)
 python scripts/run_producer.py --start 2020-07-01 --end 2021-01-01 --speed 1d/10s
 ```
@@ -148,6 +158,22 @@ Notes
   `TEST-*` messages; silver decides what to keep.
 - Topic retention is 7 days: run `01_bronze_ingest` at least weekly (or schedule it as a Job).
 - `python scripts/run_producer.py --sink file --max-events 10000` is a dry run with no Kafka.
+- Notebooks are synced from GitHub through a Databricks **Git folder**
+  (`/Users/<you>/sentinel-fraud-platform`); after a push, open it and click **Pull**.
+  `scripts/deploy_notebooks.sh` remains as a CLI alternative.
+
+## Silver and gold (Step 4)
+
+- `03_silver` streams bronze (`availableNow`) and `MERGE`s on `transaction_id`, so reruns and
+  Kafka replays are idempotent. Invalid rows go to `silver_quarantine` with their `dq_errors`.
+  The watchlist is joined point-in-time (`added_at <= event_ts < removed_at`).
+- `04_gold_features` builds features from each card's **strictly earlier** transactions and
+  writes `gold_training_set` with two label views: `label_at_cutoff` (known by the end of the
+  gap month; used for training) and `label_final` (everything known now; evaluation only).
+  Feature definitions: [`docs/features.md`](docs/features.md).
+- Leakage is tested, not just claimed: CI runs the notebook code on local Spark and checks
+  (1) Spark features equal an independent pandas implementation and (2) perturbing future
+  transactions leaves every earlier row's features unchanged.
 
 ## Repo layout
 
@@ -156,10 +182,11 @@ config/assumptions.yaml      business numbers, split dates, watchlist & label-la
 src/sentinel/common/         config loader, Kafka event contracts
 src/sentinel/data/           loader, label feed, watchlist, mock generator
 src/sentinel/streaming/      Kafka producer (sim-time replay) and sinks (Kafka / file / memory)
-notebooks/databricks/        00_setup, 01_bronze_ingest, 02_load_reference
+src/sentinel/features/       pandas reference implementation of gold features (for tests)
+notebooks/databricks/        00_setup, 01_bronze_ingest, 02_load_reference, 03_silver, 04_gold_features
 scripts/                     download, build reference data, profile, producer, deploy/upload
 schemas/                     JSON Schemas for Kafka topics
-docs/                        data profile, SOPs (for the GenAI assistant)
-tests/                       leakage, contract, producer and bronze-transform tests (local Spark)
+docs/                        data profile, feature dictionary, SOPs (for the GenAI assistant)
+tests/                       leakage, contract, producer, bronze/silver/gold transform tests (local Spark)
 .github/workflows/ci.yml     lint + tests + mock smoke run + producer dry run
 ```
