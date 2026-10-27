@@ -99,3 +99,45 @@ def test_mlflow_logging_roundtrip(frame, tmp_path, monkeypatch):
     assert loaded.predict_proba(valid.head(5))[:, 1].shape == (5,)
     run = mlflow.get_run(uris["run"])
     assert "pr_auc" in run.data.metrics
+
+
+def test_protected_attributes_are_never_model_inputs():
+    from sentinel.models.feature_sets import PROTECTED
+
+    for name in ("full", "no_watchlist"):
+        num, cat = feature_set(name)
+        assert not set(PROTECTED) & set(num + cat), name
+
+
+def test_logreg_features_are_non_redundant(frame):
+    from sentinel.models.feature_sets import LR_EXCLUDE
+    from sentinel.models.pipelines import make_logreg
+
+    num, cat = feature_set("full")
+    pipe = make_logreg(num, cat).fit(frame[num + cat], frame["label_final"])
+    names = list(pipe[:-1].get_feature_names_out())
+    assert not any("gender" in n or "age_at_txn" in n for n in names)
+    assert not any(n.endswith(f"__{c}") for c in LR_EXCLUDE for n in names)
+    # drop="first": one level per categorical is the reference, so it has no coefficient
+    n_categories = frame["category"].nunique()
+    assert sum(n.startswith("cat__category_") for n in names) <= n_categories - 1
+
+
+def test_select_champion_prefers_simpler_within_tolerance():
+    from sentinel.models.training import select_champion
+
+    table = pd.DataFrame({"name": ["xgb_d8", "xgb_d6", "lr"], "pr_auc": [0.9819, 0.9818, 0.76]})
+    models = {
+        "xgb_d8": {
+            "config": ExperimentConfig("xgb_d8", "xgb", params={"max_depth": 8}),
+            "info": {"fit_seconds": 200},
+        },
+        "xgb_d6": {
+            "config": ExperimentConfig("xgb_d6", "xgb", params={"max_depth": 6}),
+            "info": {"fit_seconds": 198},
+        },
+        "lr": {"config": ExperimentConfig("lr", "logreg"), "info": {"fit_seconds": 4}},
+    }
+    assert select_champion(table, models, tol=0.001) == "xgb_d6"
+    assert select_champion(table, models, tol=0.0) == "xgb_d8"
+    assert select_champion(table, models, tol=0.5) == "lr"

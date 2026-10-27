@@ -38,9 +38,10 @@ expected to be the strongest features.
 | `hour_of_day`, `day_of_week` | UTC hour; Spark `dayofweek` (1 = Sunday … 7 = Saturday) |
 | `is_night` | 1 if hour ≥ 22 or < 4 |
 | `home_merch_km` | haversine distance between customer home and merchant location |
-| `age_at_txn` | customer age at transaction time (derived from date of birth in the loader) |
+| `age_at_txn` | customer age at transaction time — **protected: fairness checks only, not a model input** |
 | `log_city_pop` | `log1p(city_pop)` |
-| `category`, `state`, `gender` | categorical; encoded in the modelling step |
+| `category`, `state` | categorical; one-hot encoded in the modelling step |
+| `gender` | **protected: fairness checks only, not a model input** |
 
 ## Watchlist (point-in-time join in silver)
 

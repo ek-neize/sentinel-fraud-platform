@@ -141,6 +141,23 @@ def evaluate(
     return out
 
 
+def select_champion(table: pd.DataFrame, models: dict, tol: float = 0.001) -> str:
+    """Best validation PR-AUC, but prefer the simplest model within `tol` of the best.
+
+    Simplicity order: logistic regression < shallower XGBoost < faster to fit.
+    """
+    best = table["pr_auc"].max()
+    near = table[table["pr_auc"] >= best - tol].copy()
+
+    def complexity(name: str) -> tuple:
+        cfg = models[name]["config"]
+        depth = cfg.params.get("max_depth", 0) if cfg.model == "xgb" else -1
+        return (cfg.model != "logreg", depth, models[name]["info"]["fit_seconds"])
+
+    near["_c"] = near["name"].map(complexity)
+    return near.sort_values("_c").iloc[0]["name"]
+
+
 def run_experiments(
     train: pd.DataFrame,
     valid: pd.DataFrame,

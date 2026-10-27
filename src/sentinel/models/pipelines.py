@@ -13,7 +13,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer, OneHotEncoder, StandardScaler
 
-from sentinel.models.feature_sets import LOG1P
+from sentinel.models.feature_sets import LOG1P, LR_EXCLUDE
 
 # Hour and weekday act non-linearly (night-time fraud), so the linear model one-hots them.
 LR_CYCLIC_AS_CATEGORICAL = ["hour_of_day", "day_of_week"]
@@ -29,7 +29,7 @@ def _clip_z(x):
 
 def make_logreg(numeric: list[str], categorical: list[str], C: float = 0.1, seed: int = 42):
     """Standardised, log-transformed numerics + one-hot categoricals -> L2 logistic regression."""
-    num = [c for c in numeric if c not in LR_CYCLIC_AS_CATEGORICAL and c != "amount"]
+    num = [c for c in numeric if c not in LR_CYCLIC_AS_CATEGORICAL and c not in LR_EXCLUDE]
     log_cols = [c for c in num if c in LOG1P]
     z_cols = [c for c in num if c == "amt_zscore"]
     plain = [c for c in num if c not in log_cols and c not in z_cols]
@@ -47,7 +47,13 @@ def make_logreg(numeric: list[str], categorical: list[str], C: float = 0.1, seed
             ("log", numeric_branch(_clip_log1p), log_cols),
             ("z", numeric_branch(_clip_z), z_cols),
             ("num", numeric_branch(None), plain),
-            ("cat", OneHotEncoder(handle_unknown="ignore", min_frequency=20), cats),
+            # drop="first": each level is read relative to a reference level, so coefficients
+            # are not split with the intercept. Unseen levels fall back to the reference.
+            (
+                "cat",
+                OneHotEncoder(drop="first", handle_unknown="ignore", min_frequency=20),
+                cats,
+            ),
         ],
         verbose_feature_names_out=True,
     )

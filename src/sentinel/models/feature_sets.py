@@ -8,6 +8,9 @@ from __future__ import annotations
 
 WATCHLIST = ["wl_card_hit", "wl_merchant_hit", "wl_any_hit"]
 
+# Protected attributes: kept in gold for fairness checks, never used as model inputs.
+PROTECTED = ["gender", "age_at_txn"]
+
 NUMERIC = [
     "amount",
     "log_amount",
@@ -29,12 +32,26 @@ NUMERIC = [
     "day_of_week",
     "is_night",
     "home_merch_km",
-    "age_at_txn",
     "log_city_pop",
     *WATCHLIST,
 ]
 
-CATEGORICAL = ["category", "state", "gender"]
+CATEGORICAL = ["category", "state"]
+
+# The linear baseline gets one, non-overlapping version of each signal so its coefficients
+# read cleanly (no amount expressed three ways, no nested windows splitting one effect).
+# Trees keep everything: they are not confused by correlated inputs.
+LR_EXCLUDE = [
+    "amount",  # log_amount instead
+    "amt_zscore",  # amt_to_prior_mean carries "unusual for this card"
+    "card_prior_amt_mean",
+    "card_prior_amt_std",
+    "card_prior_amt_max",
+    "amt_to_prior_max",
+    "amt_1h",
+    "amt_7d",
+    "cnt_7d",
+]
 
 # Heavy-tailed, non-negative columns: log1p before the linear model sees them.
 LOG1P = [

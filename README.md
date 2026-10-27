@@ -197,6 +197,11 @@ from `src/sentinel/models/`:
   signature). Best PR-AUC is registered in Unity Catalog as `fraud_model@champion`; best
   logistic regression as `fraud_model@baseline`, with capacity thresholds as version tags.
 - **Untouched:** the `test` split is first used in Step 6.
+- **Protected attributes** (`gender`, `age_at_txn`) are never model inputs; they stay in gold
+  only for the fairness check in Step 6.
+- **Readable baseline:** the logistic regression gets one non-overlapping version of each
+  signal and drop-first one-hot encoding, so each coefficient is "effect vs. a reference".
+- **Champion rule:** the simplest model within 0.001 validation PR-AUC of the best.
 
 ## Repo layout
 

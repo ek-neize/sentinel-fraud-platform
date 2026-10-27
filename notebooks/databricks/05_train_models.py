@@ -13,9 +13,13 @@
 # MAGIC - Early stopping, model choice and the capacity threshold use `valid` with `label_final`.
 # MAGIC - The `test` split is not read here. It is used once, in Step 6.
 # MAGIC
-# MAGIC Every run is logged to MLflow (params, validation metrics, model, plots). The model with the
-# MAGIC best validation PR-AUC is registered in Unity Catalog as `<catalog>.<schema>.fraud_model`
-# MAGIC with alias **`champion`**; the best logistic regression gets alias **`baseline`**.
+# MAGIC Every run is logged to MLflow (params, validation metrics, model, plots). The champion is the
+# MAGIC **simplest model within 0.001 PR-AUC of the best** (ties go to shallower / faster models); it is
+# MAGIC registered in Unity Catalog as `<catalog>.<schema>.fraud_model` with alias **`champion`**.
+# MAGIC The best logistic regression gets alias **`baseline`**.
+# MAGIC
+# MAGIC **Protected attributes** (`gender`, `age_at_txn`) are not model inputs. They stay in gold only
+# MAGIC for the fairness check in Step 6.
 
 # COMMAND ----------
 
@@ -54,6 +58,7 @@ from sentinel.models.training import (  # noqa: E402
     TRAIN_LABEL,
     WEIGHT_COL,
     run_experiments,
+    select_champion,
 )
 
 print("sentinel package loaded from", REPO_ROOT)
@@ -153,13 +158,14 @@ display(ablation.round(4).reset_index(names="model"))
 # DBTITLE 1,Top features: logistic regression coefficients and XGBoost gain
 lr_imp = feature_importance(models["logreg_full"]["pipeline"]).head(15)
 xgb_imp = feature_importance(models[best_xgb_full]["pipeline"]).head(15)
+# LR coefficients: effect of +1 standard deviation (numeric) or of a level vs. its reference level
 display(lr_imp[["feature", "coefficient"]].round(3))
 display(xgb_imp.round(1))
 
 # COMMAND ----------
 
-# DBTITLE 1,Register champion (best PR-AUC) and baseline (best logistic regression)
-champion = results.iloc[0]["name"]
+# DBTITLE 1,Register champion (simplest model within 0.001 of best PR-AUC) and baseline (best LR)
+champion = select_champion(results, models, tol=0.001)
 baseline = results[results["model"] == "logreg"].iloc[0]["name"]
 print("champion:", champion, "| baseline:", baseline)
 

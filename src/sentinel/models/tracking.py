@@ -94,7 +94,11 @@ def log_experiment_run(
             )
             mlflow.log_artifacts(tmp)
 
-        x_example = valid[NUMERIC + CATEGORICAL].head(200)
+        # Integer columns are declared as doubles so a missing value at serving time
+        # does not break MLflow schema enforcement.
+        x_example = valid[NUMERIC + CATEGORICAL].head(200).copy()
+        ints = x_example.select_dtypes("integer").columns
+        x_example[ints] = x_example[ints].astype("float64")
         kwargs = dict(
             signature=infer_signature(x_example, pipe.predict_proba(x_example)[:, 1]),
             input_example=x_example.head(3),
