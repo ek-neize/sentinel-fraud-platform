@@ -169,3 +169,19 @@ queue.render(load_bundle())
     at = AppTest.from_string(code, default_timeout=60).run()
     assert not at.exception
     assert any("No AI brief" in c.value for c in at.caption)
+
+
+def test_new_snapshot_files_bypass_the_cache(snapshot, tmp_path, monkeypatch):
+    """Regression: the cache was keyed by folder only, so a pulled snapshot stayed stale."""
+    import shutil
+
+    sys.path.insert(0, str(DASH))
+    from data import load_bundle
+
+    snap = tmp_path / "snap"
+    shutil.copytree(snapshot, snap)
+    (snap / "monitoring_checks.parquet").unlink()
+    monkeypatch.setenv("SENTINEL_SNAPSHOT_DIR", str(snap))
+    assert load_bundle()["monitoring_checks"].empty
+    shutil.copy(snapshot / "monitoring_checks.parquet", snap)  # new snapshot pulled
+    assert not load_bundle()["monitoring_checks"].empty

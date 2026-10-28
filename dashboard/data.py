@@ -114,10 +114,20 @@ def _load_briefs(path: Path) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=600, show_spinner="Loading data…")
-def _load_cached(mode: str, location: tuple, briefs_path: str) -> Bundle:
+def _load_cached(mode: str, location: tuple, briefs_path: str, stamp: tuple = ()) -> Bundle:
     b = _load_live(*location) if mode == "live" else _load_snapshot(Path(location[0]))
     b.briefs = _load_briefs(Path(briefs_path))
     return b
+
+
+def _fingerprint(*paths: Path) -> tuple:
+    """Names, sizes and modification times of the data files: part of the cache key, so a
+    new snapshot (git pull on redeploy) is loaded at once instead of after the TTL."""
+    out = []
+    for p in paths:
+        files = sorted(p.glob("*")) if p.is_dir() else [p] if p.exists() else []
+        out += [(f.name, f.stat().st_size, f.stat().st_mtime_ns) for f in files if f.is_file()]
+    return tuple(out)
 
 
 def load_bundle(mode: str | None = None) -> Bundle:
@@ -132,4 +142,6 @@ def load_bundle(mode: str | None = None) -> Bundle:
     else:
         location = (str(os.environ.get("SENTINEL_SNAPSHOT_DIR", DEFAULT_SNAPSHOT)),)
     briefs = os.environ.get("SENTINEL_BRIEFS_FILE", str(DEFAULT_BRIEFS))
-    return _load_cached(mode, location, briefs)
+    folder = Path(location[0]) if mode != "live" else None
+    stamp = _fingerprint(*([folder] if folder else []), Path(briefs))
+    return _load_cached(mode, location, briefs, stamp)
