@@ -343,3 +343,24 @@ def test_template_passes_checks_on_every_real_alert(index, cfg):
         assert f"disposition {a['disposition']}" not in text or "Earlier alert" in text
         res = draft_brief(case, TemplateProvider(), index, cfg)
         assert res.checks.passed, (a["alert_id"], res.checks.to_dict())
+
+
+@pytest.mark.skipif(not (SNAP / "alerts.parquet").exists(), reason="no committed snapshot")
+def test_summary_mixes_judged_and_unjudged_and_recheck(index, cfg):
+    """Regression: template records have no judge result; summarize must not crash."""
+    from sentinel.assistant.evaluation import recheck
+
+    alerts = pd.read_parquet(SNAP / "alerts.parquet")
+    hist = pd.read_parquet(SNAP / "card_history.parquet")
+    cases = build_eval_set(alerts, hist, n=4)
+
+    class _Named(TemplateProvider):
+        name, model = "anthropic", "fake-llm"
+
+    recs = run_eval(cases, [TemplateProvider(), _Named()], index, cfg, judge=_Judge(), workers=2)
+    assert not any("judge" in r for r in recs if r["provider"] == "template")
+    s = summarize(recs).set_index("provider")
+    assert s.loc["anthropic", "judge_supported"] == 1
+    saved = [json.loads(json.dumps(r, default=str)) for r in recs]  # round-trip like the file
+    again = recheck(saved, cases, index, cfg)
+    assert [r["checks"]["passed"] for r in again] == [r["checks"]["passed"] for r in recs]

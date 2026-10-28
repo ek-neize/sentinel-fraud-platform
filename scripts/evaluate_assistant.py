@@ -22,6 +22,7 @@ from sentinel.assistant.assistant import build_index, render_markdown
 from sentinel.assistant.evaluation import (
     EvalCase,
     build_eval_set,
+    recheck,
     run_eval,
     summarize,
     write_report,
@@ -59,6 +60,12 @@ def main() -> None:
     p.add_argument("--workers", type=int, default=4)
     p.add_argument("--profile", default=None, help="Databricks CLI profile")
     p.add_argument("--out", default=str(REPO_ROOT / "docs" / "assistant_eval.md"))
+    p.add_argument(
+        "--from-results",
+        action="store_true",
+        help="no API calls: re-check the saved briefs in eval/assistant/results.jsonl "
+        "and rewrite the report",
+    )
     args = p.parse_args()
     try:
         from dotenv import load_dotenv
@@ -73,28 +80,43 @@ def main() -> None:
     if args.limit:
         cases = cases[: args.limit]
     index = build_index()
-    providers = [
-        make_provider(x.strip(), cfg, profile=args.profile) for x in args.providers.split(",")
-    ]
-    judge = make_provider("anthropic", cfg, model=a["judge_model"]) if args.judge else None
-    total = len(cases) * len(providers)
-    done = []
+    results_file = EVAL_DIR / "results.jsonl"
+    if args.from_results:
+        records = [json.loads(x) for x in results_file.read_text().splitlines() if x.strip()]
+        records = recheck(records, cases, index, cfg)
+        judge_model = next((r["judge_model"] for r in records if r.get("judge_model")), None)
+        if judge_model is None and any(isinstance(r.get("judge"), dict) for r in records):
+            judge_model = a["judge_model"]
+        print(f"Re-checked {len(records)} saved briefs (no API calls)")
+    else:
+        providers = [
+            make_provider(x.strip(), cfg, profile=args.profile) for x in args.providers.split(",")
+        ]
+        judge = make_provider("anthropic", cfg, model=a["judge_model"]) if args.judge else None
+        total = len(cases) * len(providers)
+        done = []
 
-    def progress(r):
-        done.append(r)
-        flag = (
-            "ok"
-            if r.get("ok") and r["checks"]["passed"]
-            else ("FAIL" if not r.get("ok") else "flagged")
+        def progress(r):
+            done.append(r)
+            flag = (
+                "ok"
+                if r.get("ok") and r["checks"]["passed"]
+                else ("FAIL" if not r.get("ok") else "flagged")
+            )
+            print(
+                f"[{len(done)}/{total}] {r['provider']:10s} {r['case_id']:20s} {flag}", flush=True
+            )
+
+        records = run_eval(
+            cases, providers, index, cfg, judge, args.workers, args.judge_template, progress
         )
-        print(f"[{len(done)}/{total}] {r['provider']:10s} {r['case_id']:20s} {flag}", flush=True)
-
-    records = run_eval(
-        cases, providers, index, cfg, judge, args.workers, args.judge_template, progress
-    )
-    (EVAL_DIR / "results.jsonl").write_text(
-        "\n".join(json.dumps(r, default=str) for r in records) + "\n"
-    )
+        (EVAL_DIR / "results.jsonl").write_text(
+            "\n".join(json.dumps(r, default=str) for r in records) + "\n"
+        )
+        judge_model = a["judge_model"] if judge else None
+        for r in records:
+            r["judge_model"] = judge_model
+    results_file.write_text("\n".join(json.dumps(r, default=str) for r in records) + "\n")
     summary = summarize(records, a.get("prices"))
     retr = [
         r["retrieval_recall"] for r in records if r.get("ok") and r["retrieval_recall"] is not None
@@ -109,7 +131,7 @@ def main() -> None:
         records,
         cases,
         args.out,
-        a["judge_model"] if judge else None,
+        judge_model,
         {
             "n_sections": len(index.sections),
             "k": a["retrieve_k"],

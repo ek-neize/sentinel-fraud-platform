@@ -239,6 +239,26 @@ def run_one(
     return rec
 
 
+def recheck(records: list[dict], cases: list[EvalCase], index: SopIndex, cfg: dict) -> list[dict]:
+    """Re-run the automatic checks on saved briefs (no API calls). Retrieval is
+    deterministic, so the context each brief was written from is rebuilt exactly."""
+    from sentinel.assistant.checks import check_brief
+
+    a = cfg.get("assistant", {})
+    by_id = {c.case_id: c for c in cases}
+    out = []
+    for r in records:
+        r = dict(r)
+        ec = by_id.get(r["case_id"])
+        if r.get("ok") and ec is not None:
+            ctx = index.context_for(
+                ec.case.query(), a.get("retrieve_k", 6), a.get("pinned_sections", [])
+            )
+            r["checks"] = check_brief(r["brief"], ec.case, ctx).to_dict()
+        out.append(r)
+    return out
+
+
 def run_eval(
     cases: list[EvalCase],
     providers: list[Provider],
@@ -320,7 +340,8 @@ def summarize(records: list[dict], prices: dict | None = None) -> pd.DataFrame:
             "words": _mean([r["words"] for r in ok]),
             "latency_s": _mean([r["latency_s"] for r in ok]),
         }
-        js = [r["judge"] for r in ok if r.get("judge")]
+        # Records pass through a DataFrame, so a missing judge result comes back as NaN.
+        js = [r["judge"] for r in ok if isinstance(r.get("judge"), dict)]
         if js:
             n = sum(j["n"] for j in js)
             nc = sum(j["n_citations"] for j in js)
