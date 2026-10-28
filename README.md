@@ -3,6 +3,9 @@
 > End-to-end fraud detection: Kafka → Databricks medallion → XGBoost scoring →
 > capacity-constrained alerting → LLM investigation copilot.
 
+**[▶ Live dashboard](https://sentinel-fraud.streamlit.app/)** · [Results report](docs/results.md) ·
+[CI](https://github.com/ek-neize/sentinel-fraud-platform/actions)
+
 **Business question:** How can a financial institution identify suspicious
 transactions quickly while keeping the number of unnecessary investigations manageable?
 
@@ -297,6 +300,8 @@ docker build -t sentinel-api . && docker run -p 8000:8000 -v "$PWD/models:/app/m
 ```
 
 ## Investigation dashboard (Step 8)
+
+Live: **https://sentinel-fraud.streamlit.app/** (public snapshot of the real pipeline output).
 
 One Streamlit app, two data sources behind the same tables:
 
