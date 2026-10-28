@@ -15,3 +15,5 @@ data/replay/
 *.pem
 api-key*.txt
 kaggle.json
+models/
+data/alerts/

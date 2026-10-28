@@ -49,8 +49,8 @@ Full report: [`docs/results.md`](docs/results.md).
 | 4 | Silver / gold (point-in-time features, watchlist join) | ✅ |
 | 5 | Models: logistic regression baseline vs XGBoost (MLflow) | ✅ |
 | 6 | Business evaluation: PR-AUC, recall@capacity, cost, CIs | ✅ |
-| 7 | Alerting (email) + FastAPI batch scoring | ⏳ next |
-| 8 | Investigation dashboard (Streamlit) | |
+| 7 | Alerting (email) + FastAPI batch scoring | ✅ |
+| 8 | Investigation dashboard (Streamlit) | ⏳ next |
 | 9 | GenAI investigation assistant (RAG over SOPs) + eval | |
 | 10 | Monitoring, drift, CI/CD | |
 
@@ -252,6 +252,45 @@ and `@baseline`. Results: [`docs/results.md`](docs/results.md).
   with the Markdown report and plot, and `operating_k` / `operating_threshold` tags on the
   champion model version.
 
+## Scoring and alerting (Step 7)
+
+```mermaid
+flowchart LR
+    GF[(gold_features)] --> S[07_score_and_alert<br/>fraud_model@champion<br/>operating threshold]
+    S --> Q{{Backlog queue<br/>top-K/day by priority<br/>3-day expiry}}
+    Q --> AQ[(alert_queue<br/>status, reasons)]
+    Q --> DS[(alert_daily_summary)]
+    Q --> H[/digest_YYYY-MM-DD.html<br/>UC volume/]
+    H -- send_digest.py --> E[Gmail SMTP<br/>optional]
+    M[[fraud_model@champion]] -- export_model.py --> API[FastAPI /score<br/>Docker]
+```
+
+- **Operating point from Step 6:** the champion model version carries `operating_threshold`
+  and `operating_k` tags, so scoring always uses the threshold and team size that were
+  evaluated.
+- **Backlog queue** (`src/sentinel/alerts/queue.py`): overflow waits for a quieter day instead
+  of being dropped; reviewers take the highest-priority open alerts; alerts expire after
+  `max_age_days`. The same code runs offline (Step 6 strategy rows) and day by day (07); a test
+  checks they agree.
+- **Reason codes** (`explain.py`): exact TreeSHAP contributions mapped back to original
+  features and phrased for investigators ("amount is 8.2x this card's average", "$1,240 spent
+  on this card in the previous 24h"). Labelled as model signals, not facts.
+- **Digest:** one self-contained HTML file per day in the `alerts` volume — always written.
+  Email is optional: Free Edition blocks outbound SMTP, so `scripts/send_digest.py` downloads
+  the digest with the Databricks SDK and sends it via Gmail if `.env` enables it.
+- **API:** `uvicorn sentinel.serving.app:app` or Docker; `/score`, `/score/batch`, `/health`,
+  OpenAPI docs at `/docs`. It scores a gold feature record (online card-history features would
+  need a feature store; out of scope for v1).
+
+```bash
+# Databricks: run 07_score_and_alert (default: 2020-12-01, 7 days; re-runs skip done days)
+pip install -e ".[serve,notify]"
+python scripts/send_digest.py --from-databricks --dry-run   # download latest digest
+python scripts/send_digest.py --from-databricks             # email it (if enabled in .env)
+python scripts/export_model.py                              # champion -> models/champion
+docker build -t sentinel-api . && docker run -p 8000:8000 -v "$PWD/models:/app/models:ro" sentinel-api
+```
+
 ## Repo layout
 
 ```
@@ -262,10 +301,12 @@ src/sentinel/streaming/      Kafka producer (sim-time replay) and sinks (Kafka /
 src/sentinel/features/       pandas reference implementation of gold features (for tests)
 src/sentinel/models/         feature sets, LR/XGBoost pipelines, experiment runner, MLflow logging
 src/sentinel/evaluation/     capacity metrics, alert policies, cost model, bootstrap CIs, fairness, report
-notebooks/databricks/        00_setup … 04_gold_features, 05_train_models, 06_evaluate
+src/sentinel/alerts/         backlog queue, reason codes, daily operations, HTML digest, email
+src/sentinel/serving/        FastAPI scoring service (Dockerfile at repo root)
+notebooks/databricks/        00_setup … 05_train_models, 06_evaluate, 07_score_and_alert
 scripts/                     download, build reference data, profile, producer, deploy/upload
 schemas/                     JSON Schemas for Kafka topics
 docs/                        data profile, feature dictionary, SOPs (for the GenAI assistant)
 tests/                       leakage, contract, producer, bronze/silver/gold transform tests (local Spark)
-.github/workflows/ci.yml     lint + tests + mock smoke run + producer dry run
+.github/workflows/ci.yml     lint, tests (incl. local Spark), mock smoke runs, Docker build + health check
 ```

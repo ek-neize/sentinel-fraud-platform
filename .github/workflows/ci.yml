@@ -19,7 +19,7 @@ jobs:
           distribution: temurin
           java-version: "17"
       - name: Install
-        run: pip install -e ".[dev,stream,spark,ml]"
+        run: pip install -e ".[dev,stream,spark,ml,serve]"
       - name: Lint
         run: |
           ruff check src tests scripts notebooks
@@ -34,3 +34,17 @@ jobs:
           python scripts/run_producer.py --sink file --max-events 20000
           python scripts/train_local.py --mock --only logreg_full xgb_full_d4
           python scripts/evaluate_local.py --mock --bootstrap 200
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build scoring API image
+        run: docker build -t sentinel-api:ci .
+      - name: Container starts and reports no_model without a mounted model
+        run: |
+          docker run -d --name api -p 8000:8000 sentinel-api:ci
+          for i in $(seq 1 30); do curl -sf localhost:8000/health && break; sleep 2; done
+          curl -s localhost:8000/health | grep -q '"no_model"'
+          docker rm -f api

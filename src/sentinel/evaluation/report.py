@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
+from sentinel.alerts.queue import queue_stats, reviewed_mask, simulate_queue
 from sentinel.evaluation.business import (
     age_band,
     bootstrap_ci,
@@ -42,6 +43,7 @@ class EvaluationResult:
     strategies: pd.DataFrame
     intervals: pd.DataFrame
     overflow: dict
+    queue: dict
     fairness: pd.DataFrame
     headline: dict
     markdown: str = ""
@@ -101,6 +103,17 @@ def run_business_evaluation(
         )
     main_name = f"XGBoost champion: threshold, max {k}/day"
     policies[main_name] = policy_threshold_capped(test, champ_test, thr, k)
+
+    # backlog queue: overflow waits (up to max_age_days) instead of being dropped
+    max_age = cfg.get("alerting", {}).get("max_age_days", 3)
+    queue = {}
+    backlog_names = {}
+    for mode, label in (("score", "by score"), ("expected_loss", "by expected loss")):
+        q = simulate_queue(test, champ_test, thr, k, max_age, priority_mode=mode)
+        name = f"XGBoost champion: backlog queue {label}, {k}/day, {max_age}-day expiry"
+        policies[name] = reviewed_mask(len(test), q)
+        queue[mode] = queue_stats(q, test[LABEL].to_numpy())
+        backlog_names[mode] = name
     policies["XGBoost champion: threshold, no cap (overtime)"] = policy_threshold(champ_test, thr)
     policies[f"XGBoost champion: daily top-{k} (upper bound)"] = policy_topk(test, champ_test, k)
 
@@ -163,8 +176,13 @@ def run_business_evaluation(
         "cost_do_nothing": float(main["cost_do_nothing"]),
         "champion_pr_auc": float(ranking.set_index("model").loc[champion, "pr_auc"]),
     }
+    by_name = strategies.set_index("strategy")
+    for mode, name in backlog_names.items():
+        headline[f"backlog_{mode}_recall"] = float(by_name.loc[name, "recall"])
+        headline[f"backlog_{mode}_amount_recall"] = float(by_name.loc[name, "amount_recall"])
+        headline[f"backlog_{mode}_net_benefit"] = float(by_name.loc[name, "net_benefit"])
     result = EvaluationResult(
-        k, thresholds, ranking, curve, strategies, intervals, overflow, fairness, headline
+        k, thresholds, ranking, curve, strategies, intervals, overflow, queue, fairness, headline
     )
     result.markdown = to_markdown(result, cfg)
     return result
@@ -248,6 +266,34 @@ def to_markdown(r: EvaluationResult, cfg: dict) -> str:
         "were fraud.",
         "",
     ]
+    if r.queue:
+        qs = r.queue["score"]
+        ql = r.queue["expected_loss"]
+        max_age = cfg.get("alerting", {}).get("max_age_days", 3)
+        lines += [
+            "## Backlog queue (overflow waits instead of being dropped)",
+            "",
+            f"Same {k}/day team, unreviewed alerts carried over for up to {max_age} days, "
+            "highest priority first:",
+            "",
+            "| Priority | Fraud caught | $ caught | Net benefit | Same-day reviews | "
+            "Mean wait (fraud) | Frauds expired |",
+            "|---|---|---|---|---|---|---|",
+            f"| Fraud score | {_pct(h['backlog_score_recall'])} | "
+            f"{_pct(h['backlog_score_amount_recall'])} | {_usd(h['backlog_score_net_benefit'])} | "
+            f"{_pct(qs['share_reviewed_same_day'])} | {qs['mean_wait_days_fraud']:.2f} days | "
+            f"{qs['frauds_expired']} |",
+            f"| Expected loss (score × amount) | {_pct(h['backlog_expected_loss_recall'])} | "
+            f"{_pct(h['backlog_expected_loss_amount_recall'])} | "
+            f"{_usd(h['backlog_expected_loss_net_benefit'])} | "
+            f"{_pct(ql['share_reviewed_same_day'])} | {ql['mean_wait_days_fraud']:.2f} days | "
+            f"{ql['frauds_expired']} |",
+            "",
+            f"Hard daily cap for comparison: {_pct(h['recall'])} of fraud, "
+            f"{_usd(h['net_benefit'])}. A fraud reviewed within the expiry window counts as "
+            "caught; the extra exposure while it waits is reported (mean wait) but not priced.",
+            "",
+        ]
     if len(r.fairness):
         f = r.fairness[
             [

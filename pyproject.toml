@@ -17,7 +17,9 @@ kaggle = ["kaggle>=1.6"]
 stream = ["confluent-kafka>=2.4", "python-dotenv>=1.0"]
 spark = ["pyspark>=3.5"]  # local tests of notebook transforms (needs Java 17+)
 ml = ["scikit-learn>=1.4", "xgboost>=2.0", "mlflow-skinny>=2.14", "matplotlib>=3.8"]
-dev = ["pytest>=8", "ruff>=0.4"]
+serve = ["fastapi>=0.110", "uvicorn>=0.29", "python-dotenv>=1.0"]
+notify = ["databricks-sdk>=0.30", "python-dotenv>=1.0"]
+dev = ["pytest>=8", "ruff>=0.4", "httpx>=0.27"]
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -40,3 +42,5 @@ select = ["E", "F", "I", "B", "UP", "W"]
 # Databricks notebooks: spark/dbutils/display are injected globals; MAGIC lines are long.
 "notebooks/databricks/*.py" = ["F821", "E501", "I001", "E402"]
 "tests/test_bronze_transforms.py" = ["E402"]
+# Inline-styled email HTML template: long lines are clearer than split strings.
+"src/sentinel/alerts/digest.py" = ["E501"]

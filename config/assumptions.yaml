@@ -27,6 +27,16 @@ detection:
   # Share of a caught fraud's amount that is actually prevented/recovered.
   caught_fraud_recovery_rate: 0.90
 
+alerting:
+  # Alerts not reviewed on their first day wait in a backlog; reviewers always take the
+  # highest-priority open alerts. After this many days an unreviewed alert expires
+  # (by then the card is usually hot-listed or the burst is over).
+  max_age_days: 3
+  # Review order: "score" (fraud probability) or "expected_loss" (probability x amount).
+  priority: score
+  # Daily digest: how many top alerts to show.
+  digest_top_n: 20
+
 evaluation:
   # Daily review budgets swept for the capacity curve (alerts per day).
   capacities: [5, 10, 15, 20, 25, 30, 40, 50, 75, 100]
