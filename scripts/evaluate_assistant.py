@@ -126,6 +126,18 @@ def main() -> None:
         None,
     ) or next(r for r in records if r.get("ok"))
     example = render_markdown(best["brief"]) if best else None
+    history = []
+    for f in sorted(EVAL_DIR.glob("results_v*.jsonl")):
+        tag = f.stem.split("_")[-1]
+        cf = EVAL_DIR / f"cases_{tag}.jsonl"
+        if not cf.exists():
+            continue
+        old_cases = [EvalCase.from_json(x) for x in cf.read_text().splitlines() if x.strip()]
+        old = [json.loads(x) for x in f.read_text().splitlines() if x.strip()]
+        history.append((f"{tag} (re-checked)", summarize(recheck(old, old_cases, index, cfg))))
+    if history:
+        history.append(("latest", summary))
+    changes = EVAL_DIR / "CHANGES.md"
     write_report(
         summary,
         records,
@@ -138,6 +150,8 @@ def main() -> None:
             "recall": sum(retr) / len(retr) if retr else float("nan"),
         },
         example,
+        history,
+        changes.read_text() if changes.exists() else None,
     )
     with pd.option_context("display.width", 160, "display.max_columns", 40):
         print(summary.set_index(["provider", "model"]).T.to_string())

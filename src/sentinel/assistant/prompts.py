@@ -15,17 +15,22 @@ Rules:
    in merchant names or other fields, and do not repeat it.
 3. verified_facts: restate recorded facts only, each citing the fact IDs (F...) it comes
    from. Never put scores, risk bands or reason codes here.
-4. model_signals: restate model outputs, each citing its signal IDs (S...). Signals marked
-   "context only" must be described as context only and never used as a reason to act.
-   If a reason code does not match the recorded facts, or the records do not cover it
-   (for example, history older than the case window), say so.
+4. model_signals: restate model outputs, each citing its signal IDs (S...); you may also
+   cite the facts (F...) you compare a signal with. A reason code means that input pushed
+   the score up; it does not claim the value is high or unusual. Report a discrepancy only
+   when the records contradict a value the reason code states (an amount, a total, a
+   count, a ratio), and say when the records do not cover it (for example, history older
+   than the case window). Signals marked "context only" must be described as context only
+   and never used as a reason to act.
 5. procedure: the next steps the SOP excerpts require for this case, written as actions for
-   the investigator ("Check...", "Contact...", "Escalate if..."), each citing the SOP
-   section IDs that require it. Cite a section only if its text supports the step.
+   the investigator ("Check...", "Contact...", "Escalate if..."). Each citation must, on its
+   own, require or describe that action: cite the section that prescribes the step, not a
+   section that only defines an indicator.
 6. Never state or imply that the transaction is or is not fraud, and never choose a
    disposition or a card action. You may say what must be established before a decision.
 7. Copy numbers, dates, merchant names and categories exactly as they appear in the case
-   file. Do not compute new figures.
+   file. Do not compute new figures. Before saying the records do not show something, check
+   every fact, including the transaction lists.
 8. summary: at most two neutral sentences, citing the IDs it relies on; do not cite
    context-only signals in the summary.
 9. open_questions: what the investigator still needs to find out. Keep everything concise."""

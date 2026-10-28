@@ -7,6 +7,7 @@ review finished on an earlier day. The alert's own disposition is never included
 
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass, field
 
 import pandas as pd
@@ -81,6 +82,15 @@ def risk_band(score: float, threshold: float) -> str:
     return "Elevated" if score >= threshold else "Low"
 
 
+_HOUR = re.compile(r"transaction at (\d{2}):00 \(UTC\)")
+
+
+def clarify_reason(reason: str) -> str:
+    """Reason codes give the hour of day, not the minute: say so, so 01:35 vs "01:00" is
+    not read as a discrepancy."""
+    return _HOUR.sub(r"transaction in the \1:00 hour of the day (UTC)", reason)
+
+
 def is_context_only(reason: str) -> bool:
     r = reason.lower()
     return any(p in r for p in CONTEXT_ONLY_PATTERNS)
@@ -119,7 +129,7 @@ def build_case(
     cat = str(a["category"])
     amount = float(a["amount"])
     reasons = [
-        str(a[c])
+        clarify_reason(str(a[c]))
         for c in ("reason_1", "reason_2", "reason_3")
         if c in a and pd.notna(a[c]) and a[c]
     ]

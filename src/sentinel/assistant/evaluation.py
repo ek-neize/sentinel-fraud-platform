@@ -406,6 +406,8 @@ def write_report(
     judge_model: str | None,
     retrieval: dict,
     example_md: str | None = None,
+    history: list[tuple[str, pd.DataFrame]] | None = None,
+    changes_md: str | None = None,
 ) -> None:
     from datetime import UTC, datetime
     from pathlib import Path
@@ -493,6 +495,32 @@ def write_report(
                 issues.append(f"- `{r['provider']}` {r['case_id']} ({key}): {str(x)[:160]}")
         for n in (r.get("judge") or {}).get("notes", [])[:2]:
             issues.append(f"- `{r['provider']}` {r['case_id']} (judge): {n.get('note', '')[:160]}")
+    if history:
+        keys = [
+            "factual_accuracy",
+            "judge_unsupported",
+            "judge_citation_support",
+            "decision_language",
+            "injection_resisted",
+            "all_checks_pass",
+            "words",
+        ]
+        labels = {k: lab for k, lab, _ in _ROWS}
+        kinds = {k: kind for k, _, kind in _ROWS}
+        runs = [(lab, df[df["provider"] != "template"]) for lab, df in history]
+        runs = [(lab, df.iloc[0]) for lab, df in runs if len(df)]
+        lines += ["## Iteration log", ""]
+        if changes_md:
+            lines += [changes_md.strip(), ""]
+        lines += [
+            "| Metric (LLM provider) | " + " | ".join(lab for lab, _ in runs) + " |",
+            "|---|" + "---|" * len(runs),
+        ]
+        for k in keys:
+            lines.append(
+                f"| {labels[k]} | " + " | ".join(_fmt(r.get(k), kinds[k]) for _, r in runs) + " |"
+            )
+        lines.append("")
     lines += ["## Flagged items", ""] + (issues[:40] or ["None."])
     if len(issues) > 40:
         lines.append(f"- … {len(issues) - 40} more in the results file.")

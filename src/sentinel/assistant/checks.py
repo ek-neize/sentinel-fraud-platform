@@ -24,9 +24,12 @@ _SUBJECT = (
 )
 _VERDICT = re.compile(
     rf"({_SUBJECT})\s+(is|was|are|were|appears to be|appear to be|seems|seem|looks|look)"
-    r"(\s+(likely|clearly|definitely|probably|almost certainly|very likely))?\s+(to be\s+)?"
+    r"(\s+(likely|clearly|definitely|probably|almost certainly|very likely|confirmed( as)?))?"
+    r"\s+(to be\s+)?"
     r"(a\s+|an\s+)?(fraud\b|fraudulent|genuine|legitimate|a false positive|not fraud)"
-    r"|\b(likely|probable|clear|obvious|confirmed)\s+(fraud|fraudulent activity)\b",
+    # "confirmed fraud" alone is not a verdict: SOPs say "unless the card is already
+    # blocked for confirmed fraud". Only hedge-words that judge this case count.
+    r"|\b(likely|probable|clear|obvious)\s+(fraud|fraudulent activity)\b",
     re.I,
 )
 _ACTION = [
@@ -134,7 +137,10 @@ def check_brief(brief: dict, case: CaseFile, context: list[Section]) -> CheckRes
             if _MODEL_WORDS.search(text):
                 r.separation_errors.append(text)
         if section == "signal":
-            r.wrong_kind_refs += [x for x in valid if items[x].kind != "signal"]
+            # A signal statement may also cite facts (to compare a reason code with the
+            # records) but must cite at least one signal.
+            if valid and not any(items[x].kind == "signal" for x in valid):
+                r.wrong_kind_refs += valid
             if set(valid) & context_only and "context" not in text.lower():
                 r.context_misuse.append(text)
         if section == "summary" and set(valid) & context_only:
@@ -146,7 +152,10 @@ def check_brief(brief: dict, case: CaseFile, context: list[Section]) -> CheckRes
         nums = numbers(text)
         if nums:
             r.n_numeric_statements += 1
-            allowed = numbers(" ".join(items[x].text for x in valid))
+            cited = " ".join(items[x].text for x in valid)
+            if section == "signal":  # comparing a signal with the records is the point
+                cited += " " + " ".join(i.text for i in case.facts)
+            allowed = numbers(cited)
             bad = [n for n in nums if not _matches(n, allowed)]
             if bad:
                 r.number_errors.append(text)
@@ -169,5 +178,6 @@ def check_brief(brief: dict, case: CaseFile, context: list[Section]) -> CheckRes
             r.fabricated_numbers.append(step["step"])
         r.decision_language += decision_hits(step["step"])
     for q in brief.get("open_questions", []):
-        r.decision_language += _unhedged(_VERDICT, q)
+        if not q.rstrip().endswith("?"):  # a question is not a verdict
+            r.decision_language += _unhedged(_VERDICT, q)
     return r

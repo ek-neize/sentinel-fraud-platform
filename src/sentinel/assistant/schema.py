@@ -28,7 +28,10 @@ def brief_schema(fact_ids: list[str], signal_ids: list[str], section_ids: list[s
             },
             "model_signals": {
                 "type": "array",
-                "items": _obj({"statement": {"type": "string"}, "refs": _refs(signal_ids)}),
+                # signal IDs, plus facts when a reason code is compared with the records
+                "items": _obj(
+                    {"statement": {"type": "string"}, "refs": _refs(signal_ids + fact_ids)}
+                ),
             },
             "procedure": {
                 "type": "array",

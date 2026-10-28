@@ -364,3 +364,38 @@ def test_summary_mixes_judged_and_unjudged_and_recheck(index, cfg):
     saved = [json.loads(json.dumps(r, default=str)) for r in recs]  # round-trip like the file
     again = recheck(saved, cases, index, cfg)
     assert [r["checks"]["passed"] for r in again] == [r["checks"]["passed"] for r in recs]
+
+
+def test_v2_rules_hour_wording_signal_fact_refs_and_quoted_conditions(index):
+    from sentinel.assistant.case import clarify_reason
+
+    assert clarify_reason("transaction at 01:00 (UTC)") == (
+        "transaction in the 01:00 hour of the day (UTC)"
+    )
+    assert clarify_reason("amount $694") == "amount $694"
+    case = build_case(_alert(reason_1="transaction at 23:00 (UTC)"), _history())
+    assert "23:00 hour" in case.by_id["S2"].text
+
+    brief = _good_brief(case)
+    # A signal statement comparing a reason code with the records may cite a fact.
+    brief["model_signals"].append(
+        {
+            "statement": "Reason code 1 is the hour; the recorded time is 23:14 UTC.",
+            "refs": ["S2", "F1"],
+        }
+    )
+    # Quoting an SOP condition or asking a question is not a verdict.
+    brief["procedure"].append(
+        {
+            "step": "Contact the customer unless the card is already blocked for confirmed fraud.",
+            "citations": ["SOP-004 §3"],
+        }
+    )
+    brief["open_questions"].append("Is the card already blocked for confirmed fraud?")
+    ctx = [index.by_id["SOP-004 §3"], index.by_id["SOP-010 §1"]]
+    r = check_brief(brief, case, ctx)
+    assert r.passed, r.to_dict()
+
+    brief["model_signals"].append({"statement": "Only facts cited.", "refs": ["F1"]})
+    assert check_brief(brief, case, ctx).wrong_kind_refs == ["F1"]
+    assert decision_hits("State that this transaction is confirmed fraud.")
