@@ -1,21 +1,35 @@
-# Sentinel — Capacity-Aware Fraud Detection & Investigation Platform
+# Sentinel: capacity-aware fraud detection and investigation
 
-> End-to-end fraud detection: Kafka → Databricks medallion → XGBoost scoring →
-> capacity-constrained alerting → LLM investigation copilot.
+[![ci](https://github.com/ek-neize/sentinel-fraud-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/ek-neize/sentinel-fraud-platform/actions/workflows/ci.yml)
 
 **[▶ Live dashboard](https://sentinel-fraud.streamlit.app/)** · [Results report](docs/results.md) ·
-[CI](https://github.com/ek-neize/sentinel-fraud-platform/actions)
+[Assistant evaluation](docs/assistant_eval.md) · [Investigation procedures](docs/sops/README.md)
 
-**Business question:** How can a financial institution identify suspicious
-transactions quickly while keeping the number of unnecessary investigations manageable?
+**Business question:** how can a financial institution identify suspicious transactions
+quickly while keeping the number of unnecessary investigations manageable?
 
-## Results (held-out test period, Jul–Dec 2020)
+**Answer, in one paragraph.** Size the alert queue to the investigation team, not to a
+model metric. Sentinel streams card transactions through Kafka into a Databricks medallion
+pipeline, scores them with XGBoost on point-in-time features, and sets the alert threshold
+from the team's capacity (20 reviews/day, chosen by a cost model). Alerts that don't fit
+today wait in a short backlog instead of being dropped, which is where most of the gain
+comes from. Investigators get a dashboard and an AI-drafted case brief that cites
+procedures and never decides. Monitoring respects that fraud labels arrive weeks late.
 
-With a review team sized for **20 alerts/day**, the XGBoost champion caught **89% of fraud
-(95% CI 86–92%) and 93% of fraud dollars**, with **67% of alerts being real fraud** and
-1.7 false positives per 1,000 transactions, for an estimated **$575k net benefit**
-(CI $510k–$635k) over doing nothing. The rules-only watchlist with the same budget caught
-20%; the logistic-regression baseline caught 69%.
+## Results at a glance
+
+| Area | Result (held-out test period, Jul–Dec 2020, synthetic data) |
+|---|---|
+| Fraud caught at 20 alerts/day | **94.4%** of fraud, **97.5%** of fraud dollars, with the backlog queue (89.3% with a hard daily cap; logistic regression 68.8%; watchlist rule 20.4%) |
+| Investigator workload | **65.5%** of alerts are real fraud; 1.9 false positives per 1,000 transactions; 88% of alerts reviewed the same day |
+| Money | **$599k** net benefit over six months vs no model (watchlist rule: $103k); 95% CIs by day-level bootstrap |
+| Fairness | gender and age are not model inputs; alert and false-positive rates within 0.8-1.25x of the overall rate for every group; a recall gap (women 85% vs men 94%) is reported and monitored |
+| AI case briefs (Claude Sonnet 5.5) | **99.4%** of statements supported by the case file (judged by a different model), 0 invented numbers, 0 fraud verdicts, 2/2 prompt-injection attempts resisted, $0.025 per brief |
+| Monitoring | drift, volume, backlog and missing-input checks need no labels; recall is checked only on cohorts old enough for labels to be complete; Prometheus alert rules are unit-tested |
+| Engineering | 136 tests; CI runs a secret scan, lint, tests (incl. local Spark), alert-rule tests, the full Docker Compose stack and the API image; the Databricks jobs are deployed as code |
+
+<details>
+<summary>All alerting strategies at the 20/day budget, and what they show</summary>
 
 | Strategy (20 alerts/day) | Fraud caught | Alert precision | $ caught | Net benefit |
 |---|---|---|---|---|
@@ -42,27 +56,45 @@ What the numbers say:
   age group; recall is lower for women (85% vs. 94%), which is flagged for monitoring.
 - Synthetic data (Sparkov) makes absolute numbers optimistic; the method is the point.
 
+
+</details>
+
 Full report: [`docs/results.md`](docs/results.md).
 
----
-
-## Status
-
-| Step | Component | Status |
-|---|---|---|
-| 1 | Data selection & design | ✅ |
-| 2 | Data layer: download, canonical schema, label lag, watchlist, event contract, profile | ✅ |
-| 2b | Watchlist redesign after profiling (one ~2-day fraud burst per card → fast hot-list) | ✅ |
-| 3 | Kafka producer → Databricks bronze | ✅ |
-| 4 | Silver / gold (point-in-time features, watchlist join) | ✅ |
-| 5 | Models: logistic regression baseline vs XGBoost (MLflow) | ✅ |
-| 6 | Business evaluation: PR-AUC, recall@capacity, cost, CIs | ✅ |
-| 7 | Alerting (email) + FastAPI batch scoring | ✅ |
-| 8 | Investigation dashboard (Streamlit) | ✅ |
-| 9 | GenAI investigation assistant (RAG over SOPs) + eval | ✅ |
-| 10 | Monitoring, drift, CI/CD | ✅ |
-
 ## Architecture
+
+```mermaid
+flowchart LR
+    subgraph src[Source]
+        K[(Sparkov<br/>transactions)] --> P[Replay producer<br/>+ delayed labels]
+    end
+    subgraph kafka[Confluent Cloud]
+        T[[transactions.v1<br/>fraud_labels.v1]]
+    end
+    subgraph dbx[Databricks]
+        B[(bronze)] --> S[(silver<br/>dedup, quarantine,<br/>watchlist join)]
+        S --> G[(gold<br/>point-in-time features)]
+        G --> M["MLflow models<br/>champion / challenger gate"]
+        M --> A["score + alert queue<br/>20/day, 3-day backlog"]
+        A --> MON["monitoring<br/>drift, volume, matured recall"]
+        A --> SNAP[(dashboard tables)]
+        MON --> SNAP
+    end
+    subgraph serve[Serving]
+        UI["Streamlit dashboard<br/>(public snapshot)"]
+        AI["Case briefs<br/>Claude + SOP retrieval"]
+        API["FastAPI scorer<br/>/metrics"] --> PR["Prometheus + Grafana<br/>(Docker Compose)"]
+    end
+    P --> T --> B
+    SNAP --> UI
+    AI --> UI
+    M -. exported model .-> API
+    A -. daily digest .-> E[/e-mail + HTML/]
+    GH["GitHub Actions<br/>CI + bundle deploy"] -. deploys jobs .-> dbx
+```
+
+<details>
+<summary>Ingestion and medallion detail</summary>
 
 ```mermaid
 flowchart LR
@@ -101,6 +133,70 @@ flowchart LR
     GF --> GT
     SL -- label_at_cutoff / label_final --> GT
 ```
+
+</details>
+
+## Design decisions
+
+- **Labels arrive late, and everything is built around that.** Customer reports come in
+  2-72 hours and chargebacks in 15-60 days (simulated). Training uses only labels known
+  at a cutoff, evaluation uses final labels, and monitoring checks recall only on cohorts
+  60+ days old. The dashboard shows how much fraud is visible at each transaction age.
+- **No leakage by construction.** A chronological split with a one-month gap,
+  features computed from strictly earlier transactions, and a watchlist joined as of
+  each transaction's time. Tests enforce the point-in-time rules.
+- **The threshold comes from the team, not from the model.** It is fixed on validation
+  so the expected alert volume matches the review budget; the budget itself is the one with
+  the highest net benefit under the cost assumptions in `config/assumptions.yaml`.
+- **Bursty fraud needs a queue, not a cap.** A compromised card is used ~10 times in two
+  days, so busy days overflow. A 3-day backlog served highest-priority first beat a hard
+  cap by 5 points of recall and nearly matched unlimited overtime.
+- **Simplest model that is good enough.** The champion is the simplest model within
+  0.001 PR-AUC of the best (an XGBoost), and a retrained model replaces it only if it holds both
+  PR-AUC and recall at the team's capacity.
+- **The assistant drafts; the investigator decides.** Recorded facts and model signals
+  are kept apart, weak signals are labelled context only, and Claude's structured output
+  can only cite this case's facts and the retrieved procedure sections. It was evaluated
+  against an offline template baseline with a separate judge model, and the
+  [iteration log](docs/assistant_eval.md#iteration-log) records what my first checks got
+  wrong.
+- **A public demo without secrets.** The live dashboard reads a committed snapshot and
+  precomputed briefs, so it needs no Databricks or API credentials. The monitoring stack
+  is Docker Compose rather than Kubernetes: one stateless service, reproducible with one
+  command, while the production workload runs on Databricks serverless.
+- **Free tiers only.** Databricks Free Edition (serverless), Confluent Cloud Basic,
+  Streamlit Community Cloud and GitHub Actions.
+
+## Limitations
+
+- The data is synthetic (Sparkov): fraud is cleaner and burstier than in real life, so the
+  absolute numbers are optimistic. The method is the point.
+- The API scores gold feature records; computing card-history features online would need
+  a feature store, which is out of scope.
+- The assistant's gold procedures are rule-derived, its eval set has tens of cases, and its
+  judge is a model.
+- Costs (review $25, escalation $75, 85% loss on missed fraud) are illustrative
+  assumptions; the capacity planner page shows how the answer moves when they change.
+
+<details>
+<summary>Build steps</summary>
+
+| Step | Component | Status |
+|---|---|---|
+| 1 | Data selection & design | ✅ |
+| 2 | Data layer: download, canonical schema, label lag, watchlist, event contract, profile | ✅ |
+| 2b | Watchlist redesign after profiling (one ~2-day fraud burst per card → fast hot-list) | ✅ |
+| 3 | Kafka producer → Databricks bronze | ✅ |
+| 4 | Silver / gold (point-in-time features, watchlist join) | ✅ |
+| 5 | Models: logistic regression baseline vs XGBoost (MLflow) | ✅ |
+| 6 | Business evaluation: PR-AUC, recall@capacity, cost, CIs | ✅ |
+| 7 | Alerting (email) + FastAPI batch scoring | ✅ |
+| 8 | Investigation dashboard (Streamlit) | ✅ |
+| 9 | GenAI investigation assistant (RAG over SOPs) + eval | ✅ |
+| 10 | Monitoring, drift, CI/CD | ✅ |
+
+
+</details>
 
 ## Data
 
