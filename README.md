@@ -22,8 +22,8 @@ positives per 1,000 transactions")._
 | 3 | Kafka producer → Databricks bronze | ✅ |
 | 4 | Silver / gold (point-in-time features, watchlist join) | ✅ |
 | 5 | Models: logistic regression baseline vs XGBoost (MLflow) | ✅ |
-| 6 | Business evaluation: PR-AUC, recall@capacity, cost, CIs | ⏳ next |
-| 7 | Alerting (email) + FastAPI batch scoring | |
+| 6 | Business evaluation: PR-AUC, recall@capacity, cost, CIs | ✅ |
+| 7 | Alerting (email) + FastAPI batch scoring | ⏳ next |
 | 8 | Investigation dashboard (Streamlit) | |
 | 9 | GenAI investigation assistant (RAG over SOPs) + eval | |
 | 10 | Monitoring, drift, CI/CD | |
@@ -149,7 +149,7 @@ python scripts/run_producer.py --start 2019-01-01 --end 2020-07-01 --speed max
 
 # Rest of the data (test period + every label that matures after July 2020)
 python scripts/run_producer.py --start 2020-07-01 --speed max
-# In Databricks: 01_bronze_ingest -> 03_silver -> 04_gold_features -> 05_train_models
+# In Databricks: 01_bronze_ingest -> 03_silver -> 04_gold_features -> 05_train_models -> 06_evaluate
 ```
 
 Notes
@@ -203,6 +203,29 @@ from `src/sentinel/models/`:
   signal and drop-first one-hot encoding, so each coefficient is "effect vs. a reference".
 - **Champion rule:** the simplest model within 0.001 validation PR-AUC of the best.
 
+## Business evaluation (Step 6)
+
+`06_evaluate` scores the untouched test months (Jul–Dec 2020) with `fraud_model@champion`
+and `@baseline`. Results: [`docs/results.md`](docs/results.md).
+
+- **Capacity curve.** For 5–100 alerts/day: recall, precision, share of fraud dollars caught,
+  false positives per 1,000 transactions and net benefit. Two policies: *deployable* (one
+  threshold fitted on validation, at most K reviewed per day) and *daily top-K* (upper bound).
+- **Operating budget** = the K with the highest net benefit (ties → smaller team).
+- **Strategy comparison** at that budget: no model, watchlist rule (all hits / top-K by
+  amount), logistic regression, XGBoost (capped, uncapped "overtime", top-K).
+- **Cost model** from `config/assumptions.yaml`: review, escalation and customer-friction
+  costs vs. fraud losses net of recovery; net benefit is measured against doing nothing.
+- **Uncertainty:** 95% intervals from a day-level bootstrap (whole days resampled, so bursts
+  and busy days stay intact).
+- **Busy days:** how often the fixed threshold overflows the budget and how much fraud the
+  cap costs.
+- **Fairness:** alert rate, recall and false-positive rate by gender and age band, with
+  ratios to the overall rate (protected attributes are *not* model inputs).
+- Outputs: `gold_eval_*` tables, `gold_scores` (feeds dashboard and alerts), an MLflow run
+  with the Markdown report and plot, and `operating_k` / `operating_threshold` tags on the
+  champion model version.
+
 ## Repo layout
 
 ```
@@ -212,8 +235,8 @@ src/sentinel/data/           loader, label feed, watchlist, mock generator
 src/sentinel/streaming/      Kafka producer (sim-time replay) and sinks (Kafka / file / memory)
 src/sentinel/features/       pandas reference implementation of gold features (for tests)
 src/sentinel/models/         feature sets, LR/XGBoost pipelines, experiment runner, MLflow logging
-src/sentinel/evaluation/     PR-AUC, recall/precision at daily capacity, capacity thresholds
-notebooks/databricks/        00_setup … 04_gold_features, 05_train_models
+src/sentinel/evaluation/     capacity metrics, alert policies, cost model, bootstrap CIs, fairness, report
+notebooks/databricks/        00_setup … 04_gold_features, 05_train_models, 06_evaluate
 scripts/                     download, build reference data, profile, producer, deploy/upload
 schemas/                     JSON Schemas for Kafka topics
 docs/                        data profile, feature dictionary, SOPs (for the GenAI assistant)

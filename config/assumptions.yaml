@@ -27,6 +27,15 @@ detection:
   # Share of a caught fraud's amount that is actually prevented/recovered.
   caught_fraud_recovery_rate: 0.90
 
+evaluation:
+  # Daily review budgets swept for the capacity curve (alerts per day).
+  capacities: [5, 10, 15, 20, 25, 30, 40, 50, 75, 100]
+  # Day-level bootstrap for confidence intervals.
+  bootstrap_iterations: 1000
+  ci_level: 0.95
+  # Age bands for the fairness check (lower bounds, years).
+  age_bands: [0, 30, 45, 60]
+
 labels:
   # Fraud labels are not known at transaction time. Two channels deliver them:
   channels:

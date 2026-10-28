@@ -33,3 +33,4 @@ jobs:
           python scripts/profile_data.py
           python scripts/run_producer.py --sink file --max-events 20000
           python scripts/train_local.py --mock --only logreg_full xgb_full_d4
+          python scripts/evaluate_local.py --mock --bootstrap 200
