@@ -18,17 +18,22 @@ With a review team sized for **20 alerts/day**, the XGBoost champion caught **89
 |---|---|---|---|---|
 | Watchlist rule (top 20 by amount) | 20.4% | 11.1% | 29.1% | $103k |
 | Logistic regression baseline | 68.8% | 49.9% | 84.3% | $524k |
-| **XGBoost champion** | **89.3%** | **66.8%** | **93.0%** | **$575k** |
+| XGBoost champion, hard daily cap | 89.3% | 66.8% | 93.0% | $575k |
+| **XGBoost + backlog queue (by score)** | **94.4%** | **65.5%** | **97.5%** | **$599k** |
+| **XGBoost + backlog queue (by expected loss)** | 92.0% | 64.1% | **98.7%** | **$612k** |
 | XGBoost, no daily cap (overtime) | 96.5% | 63.3% | 98.9% | $603k |
 
 What the numbers say:
 - **Team size has a sweet spot.** Net benefit peaks at 20–25 alerts/day; beyond that, extra
   reviews mostly land on legitimate customers (at 100/day precision falls to 12%).
-- **The bottleneck is busy days, not the model.** Fraud arrives in bursts: on 49 of 184 days
-  the fixed threshold produced more than 20 alerts, and capping review left 145 frauds
-  unreviewed. Without the cap the same model catches 96.5% at 16.7 alerts/day on average, so
-  a backlog queue or flexible peak-day staffing should recover much of that gap (tested in
-  Step 7).
+- **The bottleneck was busy days, not the model.** Fraud arrives in bursts: on 49 of 184 days
+  the threshold produced more than 20 alerts, and a hard daily cap left 145 frauds unreviewed.
+  A **backlog queue** (overflow waits up to 3 days, highest priority first) lifts the same
+  20/day team from 89% to **94% of fraud**, with 88% of alerts still reviewed the same day
+  (mean wait for fraud 0.1 days).
+- **Prioritising by expected loss (score x amount)** catches slightly fewer frauds (92%) but
+  **98.7% of fraud dollars** and the highest net benefit ($612k), more than unlimited overtime
+  ($603k). Which to use is a policy choice: count of victims vs. dollars.
 - **Protected attributes are excluded** from the model at a cost of 0.004 validation PR-AUC.
   Alert and false-positive rates stay within 0.8–1.25 of the overall rate for every gender and
   age group; recall is lower for women (85% vs. 94%), which is flagged for monitoring.

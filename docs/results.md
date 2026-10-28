@@ -8,15 +8,17 @@ With a review budget of **20 alerts/day**, the XGBoost champion caught **89.3%**
 
 ## Strategies at the operating budget
 
-| strategy                                       |   alerts_per_day | recall   | precision   | amount_recall   |   fp_per_1000_txns | cost_total   | net_benefit   |
-|:-----------------------------------------------|-----------------:|:---------|:------------|:----------------|-------------------:|:-------------|:--------------|
-| No model (every fraud missed)                  |              0   | 0.0%     | –           | 0.0%            |                0   | $931,222     | $0            |
-| Watchlist rule: review every hit               |             89.7 | 25.6%    | 3.1%        | 29.3%           |               30.4 | $1,216,587   | $-285,365     |
-| Watchlist rule: top 20/day by amount           |             20   | 20.4%    | 11.1%       | 29.1%           |                6.2 | $828,015     | $103,208      |
-| Logistic regression: threshold, max 20/day     |             15.1 | 68.8%    | 49.9%       | 84.3%           |                2.6 | $407,151     | $524,071      |
-| XGBoost champion: threshold, max 20/day        |             14.6 | 89.3%    | 66.8%       | 93.0%           |                1.7 | $356,395     | $574,827      |
-| XGBoost champion: threshold, no cap (overtime) |             16.7 | 96.5%    | 63.3%       | 98.9%           |                2.1 | $328,315     | $602,908      |
-| XGBoost champion: daily top-20 (upper bound)   |             20   | 89.8%    | 49.1%       | 93.5%           |                3.6 | $383,010     | $548,213      |
+| strategy                                                               |   alerts_per_day | recall   | precision   | amount_recall   |   fp_per_1000_txns | cost_total   | net_benefit   |
+|:-----------------------------------------------------------------------|-----------------:|:---------|:------------|:----------------|-------------------:|:-------------|:--------------|
+| No model (every fraud missed)                                          |              0   | 0.0%     | –           | 0.0%            |                0   | $931,222     | $0            |
+| Watchlist rule: review every hit                                       |             89.7 | 25.6%    | 3.1%        | 29.3%           |               30.4 | $1,216,587   | $-285,365     |
+| Watchlist rule: top 20/day by amount                                   |             20   | 20.4%    | 11.1%       | 29.1%           |                6.2 | $828,015     | $103,208      |
+| Logistic regression: threshold, max 20/day                             |             15.1 | 68.8%    | 49.9%       | 84.3%           |                2.6 | $407,151     | $524,071      |
+| XGBoost champion: threshold, max 20/day                                |             14.6 | 89.3%    | 66.8%       | 93.0%           |                1.7 | $356,395     | $574,827      |
+| XGBoost champion: backlog queue by score, 20/day, 3-day expiry         |             15.8 | 94.4%    | 65.5%       | 97.5%           |                1.9 | $332,222     | $599,001      |
+| XGBoost champion: backlog queue by expected loss, 20/day, 3-day expiry |             15.7 | 92.0%    | 64.1%       | 98.7%           |                2   | $319,306     | $611,916      |
+| XGBoost champion: threshold, no cap (overtime)                         |             16.7 | 96.5%    | 63.3%       | 98.9%           |                2.1 | $328,315     | $602,908      |
+| XGBoost champion: daily top-20 (upper bound)                           |             20   | 89.8%    | 49.1%       | 93.5%           |                3.6 | $383,010     | $548,213      |
 
 ## Capacity curve (champion, deployable policy)
 
@@ -38,6 +40,17 @@ Operating budget = highest net benefit (ties → smaller team): **20/day**.
 ## Busy days
 
 The fixed threshold exceeded 20 alerts on 49 of 184 days (max 44/day). Capping review at 20/day left 379 alerts unreviewed, of which 145 were fraud.
+
+## Backlog queue (overflow waits instead of being dropped)
+
+Same 20/day team, unreviewed alerts carried over for up to 3 days, highest priority first:
+
+| Priority | Fraud caught | $ caught | Net benefit | Same-day reviews | Mean wait (fraud) | Frauds expired |
+|---|---|---|---|---|---|---|
+| Fraud score | 94.4% | 97.5% | $599,001 | 87.6% | 0.10 days | 43 |
+| Expected loss (score × amount) | 92.0% | 98.7% | $611,916 | 88.8% | 0.12 days | 90 |
+
+Hard daily cap for comparison: 89.3% of fraud, $574,827. A fraud reviewed within the expiry window counts as caught; the extra exposure while it waits is reported (mean wait) but not priced.
 
 ## Fairness check (protected attributes are not model inputs)
 
