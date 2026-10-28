@@ -59,8 +59,8 @@ Full report: [`docs/results.md`](docs/results.md).
 | 6 | Business evaluation: PR-AUC, recall@capacity, cost, CIs | ✅ |
 | 7 | Alerting (email) + FastAPI batch scoring | ✅ |
 | 8 | Investigation dashboard (Streamlit) | ✅ |
-| 9 | GenAI investigation assistant (RAG over SOPs) + eval | ⏳ next |
-| 10 | Monitoring, drift, CI/CD | |
+| 9 | GenAI investigation assistant (RAG over SOPs) + eval | ✅ |
+| 10 | Monitoring, drift, CI/CD | ⏳ next |
 
 ## Architecture
 
@@ -338,6 +338,54 @@ python scripts/pull_snapshot.py && git add dashboard/snapshot && git commit -m "
 - `card_prior_txn_count` shows "major" PSI **by design** (a card's history only grows); the
   dashboard labels it as expected drift rather than a data problem.
 
+## Investigation assistant (Step 9)
+
+For each alert the assistant drafts a **case brief** that an investigator edits and owns. It
+organises what is known; it never decides.
+
+```mermaid
+flowchart LR
+    A[(alert + 7-day card history)] --> C["Case file<br/>facts F1..Fn | signals S1..Sn"]
+    C --> R["BM25 over 41 SOP sections<br/>one query per fact, rank fusion"]
+    SOP[(docs/sops<br/>12 synthetic SOPs)] --> R
+    C --> L["LLM with JSON schema<br/>IDs restricted to this case"]
+    R --> L
+    L --> K{{"Automatic checks<br/>citations · numbers · no verdict"}}
+    K --> B[/brief in dashboard case view/]
+```
+
+- **Facts vs signals.** The case file splits recorded data (transaction, card history,
+  earlier alerts *reviewed before* this one, hot-list status) from model outputs (score,
+  reason codes). Reason codes that carry little information (city population, state, day of
+  week, card transaction count, distance) are marked **context only** and may not be used
+  as a reason to act (SOP-002 §3). The alert's own disposition is never shown.
+- **Citations that cannot be invented.** Claude's structured output uses a per-case JSON
+  schema whose `enum`s list only this case's fact/signal IDs and the retrieved SOP
+  sections. Each statement cites what it relies on, e.g. `F4` or `SOP-003 §3`.
+- **Checks on every brief** (`src/sentinel/assistant/checks.py`): numbers must match the
+  cited facts, citations must be retrieved sections, no model output in the facts list, no
+  verdict or chosen card action (SOP-010 §1), context-only signals labelled as such.
+- **Three providers, one interface:** `anthropic` (Claude Sonnet 5.5, medium effort),
+  `databricks` (a Model Serving chat endpoint) and `template` (offline extractive baseline,
+  used by CI and as the floor in the evaluation).
+- **Evaluation** (`scripts/evaluate_assistant.py`, report in
+  [`docs/assistant_eval.md`](docs/assistant_eval.md)): 30 real alerts stratified by outcome,
+  channel and hot-list hits, plus 6 adversarial cases (prompt injection in a merchant name,
+  context-only reasons, no history). Metrics: factual accuracy, unsupported claims
+  (automatic and judged by a *different* model, Claude Opus 5.5), citation validity /
+  precision / recall / support, decision language, context-only misuse, injection
+  resistance.
+
+```bash
+pip install -e ".[assistant]"
+echo "ANTHROPIC_API_KEY=..." >> .env          # never commit; .env is gitignored
+python scripts/evaluate_assistant.py --providers template,anthropic --judge anthropic
+python scripts/generate_briefs.py             # briefs for the dashboard's case view
+git add docs/assistant_eval.md eval/assistant dashboard/briefs && git commit -m "Assistant eval + briefs" && git push
+```
+
+The public dashboard shows these precomputed briefs, so it needs no API key.
+
 ## Repo layout
 
 ```
@@ -352,11 +400,13 @@ src/sentinel/alerts/         backlog queue, reason codes, daily operations, HTML
 src/sentinel/serving/        FastAPI scoring service (Dockerfile at repo root)
 src/sentinel/monitoring/     drift (PSI) for the dashboard and, later, scheduled monitoring
 src/sentinel/dashboard_export.py   builds the dashboard tables (notebook 08 + mock snapshot)
+src/sentinel/assistant/      case files, SOP retrieval, LLM providers, brief checks, evaluation
+eval/assistant/              fixed eval set (cases.jsonl) and latest results
 dashboard/                   Streamlit app (self-contained: snapshot or live Databricks data)
 notebooks/databricks/        00_setup … 06_evaluate, 07_score_and_alert, 08_dashboard_snapshot
 scripts/                     download, build reference data, profile, producer, deploy/upload
 schemas/                     JSON Schemas for Kafka topics
-docs/                        data profile, feature dictionary, SOPs (for the GenAI assistant)
+docs/                        data profile, feature dictionary, results, SOPs, assistant evaluation
 tests/                       leakage, contract, producer, bronze/silver/gold transform tests (local Spark)
 .github/workflows/ci.yml     lint, tests (incl. local Spark), mock smoke runs, Docker build + health check
 ```

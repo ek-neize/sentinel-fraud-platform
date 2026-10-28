@@ -25,6 +25,8 @@ TABLES = [
 ]  # fmt: skip
 
 DEFAULT_SNAPSHOT = Path(__file__).resolve().parent / "snapshot"
+# AI-drafted case briefs (scripts/generate_briefs.py); used in both modes.
+DEFAULT_BRIEFS = Path(__file__).resolve().parent / "briefs" / "briefs.parquet"
 
 
 @dataclass
@@ -34,6 +36,13 @@ class Bundle:
     mode: str
     source: str
     missing: list[str] = field(default_factory=list)
+    briefs: pd.DataFrame = field(default_factory=pd.DataFrame)
+
+    def brief_for(self, alert_id: str) -> dict | None:
+        if self.briefs.empty:
+            return None
+        hit = self.briefs[self.briefs["alert_id"] == alert_id]
+        return hit.iloc[0].to_dict() if len(hit) else None
 
     def __getitem__(self, name: str) -> pd.DataFrame:
         return self.tables.get(name, pd.DataFrame())
@@ -95,11 +104,18 @@ def _load_live(catalog: str, schema: str, warehouse_id: str) -> Bundle:
     return Bundle(tables, meta, "live", f"{catalog}.{schema} via warehouse {warehouse_id}", missing)
 
 
+def _load_briefs(path: Path) -> pd.DataFrame:
+    try:
+        return pd.read_parquet(path) if path.exists() else pd.DataFrame()
+    except Exception:  # noqa: BLE001 - briefs are optional
+        return pd.DataFrame()
+
+
 @st.cache_data(ttl=600, show_spinner="Loading data…")
-def _load_cached(mode: str, location: tuple) -> Bundle:
-    if mode == "live":
-        return _load_live(*location)
-    return _load_snapshot(Path(location[0]))
+def _load_cached(mode: str, location: tuple, briefs_path: str) -> Bundle:
+    b = _load_live(*location) if mode == "live" else _load_snapshot(Path(location[0]))
+    b.briefs = _load_briefs(Path(briefs_path))
+    return b
 
 
 def load_bundle(mode: str | None = None) -> Bundle:
@@ -113,4 +129,5 @@ def load_bundle(mode: str | None = None) -> Bundle:
         )
     else:
         location = (str(os.environ.get("SENTINEL_SNAPSHOT_DIR", DEFAULT_SNAPSHOT)),)
-    return _load_cached(mode, location)
+    briefs = os.environ.get("SENTINEL_BRIEFS_FILE", str(DEFAULT_BRIEFS))
+    return _load_cached(mode, location, briefs)

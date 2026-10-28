@@ -86,3 +86,20 @@ split:
   test_end: "2021-01-01"      # exclusive
 
 random_seed: 42
+
+assistant:
+  # Investigation assistant (Step 9). Providers: template (offline baseline, no key),
+  # anthropic (needs ANTHROPIC_API_KEY), databricks (a Model Serving chat endpoint).
+  anthropic_model: claude-sonnet-5-5
+  anthropic_effort: medium
+  judge_model: claude-opus-5-5     # a different model grades the drafts
+  databricks_endpoint: databricks-meta-llama-3-3-70b-instruct
+  max_tokens: 8000
+  retrieve_k: 10                   # SOP sections retrieved per case, plus the pinned ones
+  pinned_sections: ["SOP-002 §1", "SOP-009 §1", "SOP-010 §1"]
+  history_days: 7
+  # USD per million tokens (input, output), for the cost line in the evaluation report.
+  prices:
+    claude-sonnet-5-5: [2.0, 10.0]
+    claude-opus-5-5: [4.0, 20.0]
+    claude-haiku-5-5: [0.10, 0.50]

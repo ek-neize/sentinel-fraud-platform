@@ -1,9 +1,25 @@
 # Investigation procedures (synthetic)
 
-Placeholder. The 8–12 synthetic SOPs used by the GenAI investigation assistant
-(component D) are written in that step, each with a stable ID (`SOP-001` …) and
-numbered sections so the assistant can cite them precisely, e.g. `[SOP-003 §2.1]`.
+Twelve **synthetic** standard operating procedures used by the investigation assistant
+(Step 9). They are written for this portfolio project and do not describe any real
+institution. Each file has a stable ID and numbered sections, so citations are precise:
+`[SOP-003 §2]` means section 2 of SOP-003.
 
-Planned topics: high-amount anomaly review, velocity bursts, card-not-present
-review, geo-distance anomaly, watchlist-hit escalation, merchant verification,
-customer contact script, false-positive closure, evidence standards, escalation matrix.
+| ID | Title |
+|---|---|
+| SOP-001 | Alert triage and case opening |
+| SOP-002 | Interpreting model scores and reason codes |
+| SOP-003 | Velocity bursts and card testing |
+| SOP-004 | Card-not-present (online) transactions |
+| SOP-005 | High-amount and out-of-pattern purchases |
+| SOP-006 | Watchlist hits |
+| SOP-007 | Time-of-day and location anomalies |
+| SOP-008 | Customer contact and verification |
+| SOP-009 | Evidence standards and case documentation |
+| SOP-010 | Dispositions, escalation and decision authority |
+| SOP-011 | Fair treatment and protected attributes |
+| SOP-012 | False-positive closure and feedback |
+
+Rules the procedures encode, which the assistant evaluation checks: the model score and
+reason codes are signals, not evidence (SOP-002, SOP-009); context-only inputs such as city
+population are never a reason to act (SOP-002 §3); only investigators decide (SOP-010 §1).

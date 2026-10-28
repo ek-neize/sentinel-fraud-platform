@@ -35,6 +35,7 @@ jobs:
           python scripts/train_local.py --mock --only logreg_full xgb_full_d4
           python scripts/evaluate_local.py --mock --bootstrap 200
           python scripts/build_mock_snapshot.py --out /tmp/snapshot --days 10 --bootstrap 50
+          python scripts/evaluate_assistant.py --out /tmp/assistant_eval.md
 
   docker:
     runs-on: ubuntu-latest

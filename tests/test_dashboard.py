@@ -142,3 +142,30 @@ def test_write_snapshot_ignores_unserializable_attrs(tmp_path):
     write_snapshot({"t": df}, {"x": 1}, tmp_path)
     assert pd.read_parquet(tmp_path / "t.parquet")["a"].tolist() == [1, 2]
     assert df.attrs  # caller's frame untouched
+
+
+def test_case_view_shows_ai_brief(snapshot, tmp_path, monkeypatch):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from generate_briefs import generate
+
+    briefs = tmp_path / "briefs.parquet"
+    df = generate("template", snapshot=snapshot, out=briefs, workers=1)
+    assert len(df) and df["checks_passed"].all()
+    monkeypatch.setenv("SENTINEL_SNAPSHOT_DIR", str(snapshot))
+    code = f"""
+import sys; sys.path.insert(0, {str(DASH)!r})
+from data import load_bundle
+from views import queue
+queue.render(load_bundle())
+"""
+    monkeypatch.setenv("SENTINEL_BRIEFS_FILE", str(briefs))
+    at = AppTest.from_string(code, default_timeout=60).run()
+    assert not at.exception
+    assert any("Automatic checks passed" in s.value for s in at.success)
+    assert any("Verified facts" in m.value for m in at.markdown)
+    assert any("SOP-0" in m.value for m in at.markdown)
+
+    monkeypatch.setenv("SENTINEL_BRIEFS_FILE", str(tmp_path / "none.parquet"))
+    at = AppTest.from_string(code, default_timeout=60).run()
+    assert not at.exception
+    assert any("No AI brief" in c.value for c in at.caption)

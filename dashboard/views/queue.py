@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import altair as alt
 import pandas as pd
 import streamlit as st
@@ -120,6 +122,7 @@ def _case_panel(b, a: pd.Series, threshold: float) -> None:
             if pd.notna(a.get(c)) and a.get(c):
                 st.markdown(md(f"- {a[c]}"))
     st.caption(DISCLAIMER)
+    _brief_panel(b, a)
 
     hist = b["card_history"]
     hist = hist[hist["alert_id"] == a["alert_id"]] if not hist.empty else hist
@@ -154,3 +157,30 @@ def _case_panel(b, a: pd.Series, threshold: float) -> None:
         .properties(height=240)
     )
     show(chart, hist.drop(columns=["alert_id"]), table_label="Show card transactions")
+
+
+def _brief_panel(b, a: pd.Series) -> None:
+    """AI-drafted brief (precomputed by scripts/generate_briefs.py; no API key needed here)."""
+    brief = b.brief_for(a["alert_id"])
+    with st.expander("Investigation brief (AI draft)", expanded=brief is not None, icon="📝"):
+        if brief is None:
+            st.caption(
+                "No AI brief for this alert. Run `python scripts/generate_briefs.py` after "
+                "pulling a snapshot."
+            )
+            return
+        if brief.get("checks_passed"):
+            st.success("Automatic checks passed: citations, numbers, no verdict.", icon="✅")
+        else:
+            st.warning(
+                f"Automatic checks flagged {int(brief.get('issues', 0))} issue(s); "
+                "read with care.",
+                icon="⚠️",
+            )
+        st.markdown(md(brief["markdown"]))
+        sections = json.loads(brief.get("cited_sections") or "[]")
+        if sections:
+            st.markdown("**Cited procedure sections**")
+            for sec in sections:
+                st.markdown(md(f"`{sec['id']}` {sec['label'].split(' ', 2)[-1]}"))
+                st.caption(md(sec["text"]))
