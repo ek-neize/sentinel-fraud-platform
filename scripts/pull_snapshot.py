@@ -27,14 +27,21 @@ def main() -> None:
     args = p.parse_args()
 
     from databricks.sdk import WorkspaceClient
+    from databricks.sdk.errors import NotFound
 
     w = WorkspaceClient(profile=args.profile)
     folder = f"/Volumes/{args.catalog}/{args.schema}/dashboard_snapshot"
-    files = [
-        e.name
-        for e in w.files.list_directory_contents(folder)
-        if e.name and (e.name.endswith(".parquet") or e.name == "meta.json")
-    ]
+    try:
+        files = [
+            e.name
+            for e in w.files.list_directory_contents(folder)
+            if e.name and (e.name.endswith(".parquet") or e.name == "meta.json")
+        ]
+    except NotFound:
+        raise SystemExit(
+            f"{folder} does not exist yet. In the Databricks Git folder click Pull, then run "
+            "notebook 08_dashboard_snapshot (it creates the volume), and re-run this script."
+        ) from None
     if "meta.json" not in files:
         raise SystemExit(f"No snapshot in {folder}. Run notebook 08_dashboard_snapshot first.")
     tmp = DEST.with_name("snapshot_tmp")
