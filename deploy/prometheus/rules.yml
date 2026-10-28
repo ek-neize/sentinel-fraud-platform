@@ -1,0 +1,59 @@
+# Alerting rules for the scoring API. Unit-tested with `promtool test rules`
+# (deploy/prometheus/rules_test.yml), which CI runs.
+groups:
+  - name: sentinel-api
+    rules:
+      - alert: SentinelApiDown
+        expr: up{job="sentinel-api"} == 0
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: Scoring API is not reachable
+
+      - alert: SentinelModelNotLoaded
+        expr: sentinel_model_loaded == 0
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: API is up but has no model; every /score returns 503
+
+      - alert: SentinelHighErrorRate
+        expr: |
+          sum(rate(sentinel_http_requests_total{status=~"5.."}[5m]))
+            / sum(rate(sentinel_http_requests_total[5m])) > 0.05
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: More than 5% of requests fail with a server error
+
+      - alert: SentinelSlowScoring
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(sentinel_http_request_duration_seconds_bucket{endpoint="/score"}[5m]))
+          ) > 0.5
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: 95th percentile /score latency above 500 ms
+
+      # Data and model behaviour (no labels needed): compare live traffic with the
+      # validation-period reference values the model ships with (sentinel_meta.json).
+      # max() drops the scrape labels (job, instance) so both sides of `>` match.
+      - alert: SentinelAlertRateHigh
+        expr: |
+          sum(rate(sentinel_alerts_total[5m])) / sum(rate(sentinel_transactions_scored_total[5m]))
+            > 2 * max(sentinel_reference_alert_rate)
+        for: 2m
+        labels: {severity: warning}
+        annotations:
+          summary: Share of transactions above the threshold is more than 2x validation
+          description: Review queue will overflow; check for input drift or an upstream change.
+
+      - alert: SentinelAmountShift
+        expr: |
+          histogram_quantile(0.5, sum by (le) (rate(sentinel_input_amount_bucket[5m])))
+            > 2 * max(sentinel_reference_amount_p50)
+        for: 2m
+        labels: {severity: warning}
+        annotations:
+          summary: Median transaction amount is more than 2x validation (input drift)

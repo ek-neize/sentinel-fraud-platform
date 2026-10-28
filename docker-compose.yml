@@ -1,0 +1,74 @@
+# Local monitoring demo: scoring API + traffic replay + Prometheus + Grafana.
+#
+#   docker compose up --build
+#
+# On first start `model-init` trains a small demo model on mock data inside the image (about
+# a minute) and stores it in the `models` volume, so nothing needs to be prepared on the
+# host and the model always matches the image's library versions.
+#
+#   API docs    http://localhost:8000/docs      metrics  http://localhost:8000/metrics
+#   Prometheus  http://localhost:9090/alerts
+#   Grafana     http://localhost:3000           (dashboard "Sentinel · scoring API")
+#
+# The traffic service switches to drifted data after DRIFT_AFTER_S seconds, so the drift
+# and alert-rate rules fire a few minutes later. `docker compose down` stops everything.
+name: sentinel
+
+services:
+  model-init:
+    build: .
+    image: sentinel-api:local
+    volumes:
+      - models:/app/models
+    environment:
+      MLFLOW_DISABLE_AGENT_HINT: "1"
+    command: ["sh", "-c", "test -f /app/models/champion/MLmodel || python scripts/make_demo_model.py --out /app/models"]
+
+  api:
+    image: sentinel-api:local
+    depends_on:
+      model-init: {condition: service_completed_successfully}
+    ports: ["8000:8000"]
+    volumes:
+      - models:/app/models:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  traffic:
+    image: sentinel-api:local
+    depends_on:
+      api: {condition: service_healthy}
+    volumes:
+      - models:/app/models:ro
+    environment:
+      API_URL: http://api:8000
+      TRAFFIC_FILE: /app/models/demo_traffic.jsonl
+      RATE: "${RATE:-10}"
+      DRIFT_AFTER_S: "${DRIFT_AFTER_S:-300}"
+    command: ["python", "scripts/traffic.py"]
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    depends_on: [api]
+    ports: ["9090:9090"]
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/prometheus/rules.yml:/etc/prometheus/rules.yml:ro
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    depends_on: [prometheus]
+    ports: ["3000:3000"]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"        # read-only demo; no login needed to view
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/sentinel-api.json
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+
+volumes:
+  models:

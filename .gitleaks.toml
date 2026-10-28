@@ -1,0 +1,19 @@
+# Secret scan (CI job "secrets"): gitleaks' default rules plus project-specific ones.
+title = "sentinel"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "anthropic-api-key"
+description = "Anthropic API key"
+regex = '''sk-ant-(?:api|admin)\d{2}-[A-Za-z0-9_\-]{80,}'''
+keywords = ["sk-ant-"]
+
+[[rules]]
+id = "assignment-of-api-key"
+description = "A real-looking value assigned to a *_API_KEY / *_SECRET / *_PASSWORD variable"
+regex = '''(?i)[A-Z0-9_]*(?:API_KEY|SECRET|PASSWORD|TOKEN)\s*[=:]\s*['"]?([A-Za-z0-9_\-\.\/+]{20,})'''
+secretGroup = 1
+entropy = 3.5          # placeholders such as sk-xxxxxxxx have low entropy and pass
+keywords = ["api_key", "secret", "password", "token"]

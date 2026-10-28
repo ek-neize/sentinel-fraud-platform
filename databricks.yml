@@ -1,0 +1,111 @@
+# Databricks Asset Bundle: the scheduled pipeline as code.
+#
+#   databricks bundle validate -p sentinel
+#   databricks bundle deploy   -p sentinel            # dev target: jobs prefixed, schedule paused
+#   databricks bundle run sentinel_daily -p sentinel
+#
+# Deployed by .github/workflows/deploy.yml when DATABRICKS_HOST / DATABRICKS_TOKEN secrets
+# exist. Compute is serverless (no cluster definitions), which is what Free Edition offers.
+bundle:
+  name: sentinel
+
+variables:
+  catalog:
+    description: Unity Catalog catalog
+    default: workspace
+  schema:
+    description: Schema for all Sentinel tables
+    default: sentinel
+
+sync:
+  exclude:
+    - data/**
+    - models/**
+    - mlruns/**
+    - dashboard/snapshot/**
+    - dashboard/briefs/**
+    - eval/**
+    - deploy/**
+
+targets:
+  dev:
+    mode: development       # names prefixed with [dev <user>], schedules paused
+    default: true
+  prod:
+    mode: production
+    workspace:
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/prod
+
+resources:
+  jobs:
+    sentinel_daily:
+      name: sentinel-daily
+      description: >
+        Kafka -> bronze -> silver -> gold -> score and alert -> monitoring -> dashboard
+        snapshot. A critical monitoring check fails the run; the failure e-mail is the alert.
+      max_concurrent_runs: 1
+      schedule:
+        quartz_cron_expression: "0 30 6 * * ?"   # 06:30 UTC daily
+        timezone_id: UTC
+        pause_status: PAUSED                     # unpause in the Jobs UI when wanted
+      email_notifications:
+        on_failure:
+          - ${workspace.current_user.userName}
+      tags:
+        project: sentinel
+      tasks:
+        - task_key: bronze
+          notebook_task:
+            notebook_path: ./notebooks/databricks/01_bronze_ingest.py
+            base_parameters: {catalog: "${var.catalog}", schema: "${var.schema}"}
+        - task_key: silver
+          depends_on: [{task_key: bronze}]
+          notebook_task:
+            notebook_path: ./notebooks/databricks/03_silver.py
+            base_parameters: {catalog: "${var.catalog}", schema: "${var.schema}"}
+        - task_key: gold
+          depends_on: [{task_key: silver}]
+          notebook_task:
+            notebook_path: ./notebooks/databricks/04_gold_features.py
+            base_parameters: {catalog: "${var.catalog}", schema: "${var.schema}"}
+        - task_key: score_and_alert
+          depends_on: [{task_key: gold}]
+          notebook_task:
+            notebook_path: ./notebooks/databricks/07_score_and_alert.py
+            base_parameters: {catalog: "${var.catalog}", schema: "${var.schema}"}
+        - task_key: monitoring
+          depends_on: [{task_key: score_and_alert}]
+          notebook_task:
+            notebook_path: ./notebooks/databricks/09_monitoring.py
+            base_parameters:
+              catalog: "${var.catalog}"
+              schema: "${var.schema}"
+              fail_on_critical: "true"
+        - task_key: dashboard_snapshot
+          depends_on: [{task_key: monitoring}]
+          run_if: ALL_DONE                       # refresh the dashboard even when monitoring fails
+          notebook_task:
+            notebook_path: ./notebooks/databricks/08_dashboard_snapshot.py
+            base_parameters: {catalog: "${var.catalog}", schema: "${var.schema}"}
+
+    sentinel_retrain:
+      name: sentinel-retrain
+      description: >
+        Train candidates, register the best behind the champion/challenger gate, then
+        re-evaluate on the test period. Run on demand (no schedule).
+      max_concurrent_runs: 1
+      email_notifications:
+        on_failure:
+          - ${workspace.current_user.userName}
+      tags:
+        project: sentinel
+      tasks:
+        - task_key: train
+          notebook_task:
+            notebook_path: ./notebooks/databricks/05_train_models.py
+            base_parameters: {catalog: "${var.catalog}", schema: "${var.schema}", register: "true"}
+        - task_key: evaluate
+          depends_on: [{task_key: train}]
+          notebook_task:
+            notebook_path: ./notebooks/databricks/06_evaluate.py
+            base_parameters: {catalog: "${var.catalog}", schema: "${var.schema}"}

@@ -10,7 +10,7 @@
 # MAGIC | `dash_*` Delta tables + `dash_meta` | Databricks App (`SENTINEL_DATA_MODE=live`) |
 # MAGIC | Parquet files + `meta.json` in `/Volumes/<catalog>/<schema>/dashboard_snapshot/` | public Streamlit app: `python scripts/pull_snapshot.py`, then commit `dashboard/snapshot/` |
 # MAGIC
-# MAGIC Run after `07_score_and_alert`. Everything is aggregated or case-level demo data on
+# MAGIC Run after `07_score_and_alert` and `09_monitoring`. Everything is aggregated or case-level demo data on
 # MAGIC synthetic transactions; gender and age appear only as group-level fairness rates.
 
 # COMMAND ----------
@@ -117,9 +117,17 @@ eval_tables = {
 # COMMAND ----------
 
 # DBTITLE 1,Build tables
+# Monitoring tables from notebook 09, if it has run.
+monitoring = None
+if spark.catalog.tableExists(f"{NS}.monitoring_checks"):
+    monitoring = (to_pd(spark.table(f"{NS}.monitoring_checks")),
+                  to_pd(spark.table(f"{NS}.monitoring_label_maturity")))
+else:
+    print("monitoring_checks not found: run 09_monitoring first to include the Monitoring page")
+
 tables, meta = build_snapshot(
     queue=queue, daily_summary=daily, scored=scored, features=scored, history_txns=history,
-    eval_tables=eval_tables, model_info=MODEL_INFO, cfg=CFG,
+    eval_tables=eval_tables, model_info=MODEL_INFO, cfg=CFG, monitoring=monitoring,
 )
 for name, t in tables.items():
     print(f"{name:16s} {len(t):>7,} rows")

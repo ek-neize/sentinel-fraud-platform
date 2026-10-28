@@ -16,7 +16,7 @@ import pandas as pd
 
 from sentinel.alerts.pipeline import ScoringModel, empty_queue, process_day
 from sentinel.common.config import load_assumptions
-from sentinel.dashboard_export import build_snapshot, write_snapshot
+from sentinel.dashboard_export import DRIFT_FEATURES, build_snapshot, write_snapshot
 from sentinel.data.labels import simulate_label_feed
 from sentinel.data.loader import to_canonical
 from sentinel.data.mock import make_mock_raw
@@ -24,6 +24,7 @@ from sentinel.data.watchlist import build_watchlist
 from sentinel.evaluation.report import run_business_evaluation
 from sentinel.features.training_set import build_training_frame
 from sentinel.models.training import ExperimentConfig, run_experiments
+from sentinel.monitoring.checks import monitoring_history
 
 
 def make_inputs(days: int = 21, bootstrap: int = 200, seed: int = 7) -> dict:
@@ -114,6 +115,13 @@ def build(out: str, days: int = 21, bootstrap: int = 200, seed: int = 7) -> None
         eval_tables=i["eval_tables"],
         model_info=i["model_info"],
         cfg=i["cfg"],
+        monitoring=monitoring_history(
+            i["scored"][i["scored"]["split"] == "test"],
+            i["scored"][i["scored"]["split"] == "valid"],
+            i["daily_summary"],
+            i["cfg"],
+            DRIFT_FEATURES,
+        ),
     )
     meta["mock"] = True
     path = write_snapshot(tables, meta, out)

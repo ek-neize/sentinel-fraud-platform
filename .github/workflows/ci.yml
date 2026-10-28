@@ -6,6 +6,18 @@ on:
   pull_request:
 
 jobs:
+  secrets:
+    # Fails the build if a key or password is committed anywhere in the history.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks (default rules + .gitleaks.toml)
+        run: |
+          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.21.2 \
+            detect --source /repo --config /repo/.gitleaks.toml --redact --no-banner -v
+
   test:
     runs-on: ubuntu-latest
     steps:
@@ -36,6 +48,49 @@ jobs:
           python scripts/evaluate_local.py --mock --bootstrap 200
           python scripts/build_mock_snapshot.py --out /tmp/snapshot --days 10 --bootstrap 50
           python scripts/evaluate_assistant.py --out /tmp/assistant_eval.md
+
+  monitoring-config:
+    # Prometheus config is valid and the alert rules fire (and stay quiet) as intended.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: promtool check config + rule unit tests
+        run: |
+          docker run --rm -v "$PWD/deploy/prometheus:/etc/prometheus" -w /etc/prometheus \
+            --entrypoint promtool prom/prometheus:v2.55.1 check config prometheus.yml
+          docker run --rm -v "$PWD/deploy/prometheus:/etc/prometheus" -w /etc/prometheus \
+            --entrypoint promtool prom/prometheus:v2.55.1 test rules rules_test.yml
+      - name: Grafana dashboard JSON is valid
+        run: python -c "import json; d=json.load(open('deploy/grafana/dashboards/sentinel-api.json')); assert d['panels']"
+
+  compose:
+    # The one-command demo works: model trained in the image, API scored, Prometheus
+    # scraping, Grafana serving the provisioned dashboard.
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - name: docker compose up
+        run: DRIFT_AFTER_S=30 docker compose up -d --build
+      - name: Prometheus sees scored transactions
+        run: |
+          for i in $(seq 1 60); do
+            n=$(curl -s 'localhost:9090/api/v1/query?query=sum(sentinel_transactions_scored_total)' \
+                | python -c "import json,sys; r=json.load(sys.stdin)['data']['result']; print(int(float(r[0]['value'][1])) if r else 0)")
+            echo "scored: $n"; [ "$n" -gt 50 ] && break; sleep 5
+          done
+          [ "$n" -gt 50 ]
+          curl -s localhost:9090/api/v1/targets | grep -q '"health":"up"'
+      - name: Grafana serves the dashboard
+        run: |
+          for i in $(seq 1 30); do curl -sf localhost:3000/api/health && break; sleep 2; done
+          curl -s 'localhost:3000/api/search?query=Sentinel' | grep -q sentinel-api
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs --tail 80
+      - name: docker compose down
+        if: always()
+        run: docker compose down -v
 
   docker:
     runs-on: ubuntu-latest

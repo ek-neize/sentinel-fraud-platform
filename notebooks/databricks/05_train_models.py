@@ -51,6 +51,7 @@ import sys
 REPO_ROOT = os.path.abspath("../..")
 sys.path.insert(0, os.path.join(REPO_ROOT, "src"))
 
+from sentinel.common.config import load_assumptions  # noqa: E402
 from sentinel.models.feature_sets import CATEGORICAL, NUMERIC  # noqa: E402
 from sentinel.models.training import (  # noqa: E402
     DEFAULT_EXPERIMENTS,
@@ -61,6 +62,7 @@ from sentinel.models.training import (  # noqa: E402
     select_champion,
 )
 
+CFG = load_assumptions()
 print("sentinel package loaded from", REPO_ROOT)
 
 # COMMAND ----------
@@ -171,15 +173,39 @@ print("champion:", champion, "| baseline:", baseline)
 
 if REGISTER:
     from mlflow import MlflowClient
+    from mlflow.exceptions import MlflowException
+
+    from sentinel.models.promotion import promotion_decision
 
     client = MlflowClient()
+
+    def current_metrics(alias):
+        """Validation metrics of the model version that holds `alias` now (None if none)."""
+        try:
+            mv = client.get_model_version_by_alias(MODEL_NAME, alias)
+        except MlflowException:
+            return None
+        return dict(client.get_run(mv.run_id).data.metrics)
+
     for alias, name in (("champion", champion), ("baseline", baseline)):
         mv = mlflow.register_model(model_uris[name], MODEL_NAME)
-        client.set_registered_model_alias(MODEL_NAME, alias, mv.version)
         thr = models[name]["thresholds"]
         client.set_model_version_tag(MODEL_NAME, mv.version, "experiment", name)
         client.set_model_version_tag(MODEL_NAME, mv.version, "threshold_100_per_day", str(thr[100]))
         client.set_model_version_tag(MODEL_NAME, mv.version, "threshold_25_per_day", str(thr[25]))
+        if alias == "champion":
+            # Champion/challenger gate (config: promotion): only move @champion if better.
+            decision = promotion_decision(models[name]["metrics"], current_metrics("champion"),
+                                          CFG["promotion"])
+            client.set_model_version_tag(MODEL_NAME, mv.version, "promotion",
+                                         ("promoted: " if decision.promote else "rejected: ")
+                                         + decision.reason)
+            if not decision.promote:
+                client.set_registered_model_alias(MODEL_NAME, "challenger", mv.version)
+                print(f"{MODEL_NAME} v{mv.version} -> @challenger ({name}); champion kept: "
+                      f"{decision.reason}")
+                continue
+        client.set_registered_model_alias(MODEL_NAME, alias, mv.version)
         print(f"{MODEL_NAME} v{mv.version} -> @{alias} ({name})")
 else:
     print("register = false: skipped registration")

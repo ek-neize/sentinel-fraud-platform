@@ -17,7 +17,7 @@ pytest.importorskip("xgboost")
 from streamlit.testing.v1 import AppTest  # noqa: E402
 
 DASH = Path(__file__).resolve().parents[1] / "dashboard"
-PAGES = ["overview", "queue", "trends", "model", "planner"]
+PAGES = ["overview", "queue", "trends", "model", "monitoring", "planner"]
 
 
 @pytest.fixture(scope="module")

@@ -15,7 +15,7 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from data import load_bundle  # noqa: E402
-from views import model, overview, planner, queue, trends  # noqa: E402
+from views import model, monitoring, overview, planner, queue, trends  # noqa: E402
 
 st.set_page_config(page_title="Sentinel · fraud operations", page_icon="🛡️", layout="wide")
 
@@ -51,6 +51,7 @@ nav = st.navigation(
         _page(queue.render, "Alert queue", "🚨"),
         _page(trends.render, "Trends", "📈"),
         _page(model.render, "Model & drift", "🧪"),
+        _page(monitoring.render, "Monitoring", "🩺"),
         _page(planner.render, "Capacity planner", "🧮"),
     ]
 )

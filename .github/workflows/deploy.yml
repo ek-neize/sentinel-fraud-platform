@@ -1,0 +1,43 @@
+name: deploy
+
+# Deploys the Databricks Asset Bundle (databricks.yml): notebooks, src/ and the two jobs.
+# Needs repository secrets DATABRICKS_HOST (https://<workspace>.cloud.databricks.com) and
+# DATABRICKS_TOKEN (a personal access token). Without them the workflow skips the deploy.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Bundle target
+        type: choice
+        options: [dev, prod]
+        default: dev
+  push:
+    branches: [main]
+    paths: ["notebooks/**", "src/**", "config/**", "databricks.yml"]
+
+concurrency: deploy-${{ github.ref }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+      TARGET: ${{ inputs.target || 'dev' }}
+    steps:
+      - name: Skip when Databricks secrets are not set
+        if: env.DATABRICKS_TOKEN == ''
+        run: echo "::notice::DATABRICKS_HOST / DATABRICKS_TOKEN not set; skipping deploy."
+      - uses: actions/checkout@v4
+        if: env.DATABRICKS_TOKEN != ''
+      - uses: databricks/setup-cli@v0.299.0
+        if: env.DATABRICKS_TOKEN != ''
+      - name: Validate bundle
+        if: env.DATABRICKS_TOKEN != ''
+        run: databricks bundle validate -t "$TARGET"
+      - name: Deploy bundle
+        if: env.DATABRICKS_TOKEN != ''
+        run: databricks bundle deploy -t "$TARGET"
+      - name: Summary
+        if: env.DATABRICKS_TOKEN != ''
+        run: databricks bundle summary -t "$TARGET"

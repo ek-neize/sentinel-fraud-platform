@@ -99,3 +99,27 @@ def test_risk_band():
     assert risk_band(0.95, 0.2) == "high"
     assert risk_band(0.25, 0.2) == "elevated"
     assert risk_band(0.1, 0.2) == "low"
+
+
+def test_prometheus_metrics(client):
+    c, va = client
+    c.post("/score/batch", json=[_record(r) for _, r in va.head(20).iterrows()])
+    c.post("/score", json=_record(va.iloc[0]) | {"amount": -1})  # a 422
+    text = c.get("/metrics").text
+    assert "sentinel_model_loaded 1.0" in text
+    assert 'sentinel_model_info{version="test"} 1.0' in text
+    assert "sentinel_threshold 0.3" in text
+    scored = next(
+        x for x in text.splitlines() if x.startswith("sentinel_transactions_scored_total")
+    )
+    assert float(scored.split()[-1]) >= 20
+    assert 'sentinel_http_requests_total{endpoint="/score",status="422"}' in text
+    assert 'sentinel_http_request_duration_seconds_bucket{endpoint="/score/batch"' in text
+    assert "sentinel_score_bucket" in text and "sentinel_input_amount_bucket" in text
+    assert "/metrics" not in [p for p in c.get("/openapi.json").json()["paths"]]
+
+
+def test_metrics_without_model(monkeypatch, tmp_path):
+    monkeypatch.setenv("SENTINEL_MODEL_PATH", str(tmp_path / "none"))
+    with TestClient(create_app(None)) as c:
+        assert "sentinel_model_loaded 0.0" in c.get("/metrics").text

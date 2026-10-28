@@ -103,3 +103,32 @@ assistant:
     claude-sonnet-5-5: [2.0, 10.0]
     claude-opus-5-5: [4.0, 20.0]
     claude-haiku-5-5: [0.10, 0.50]
+
+monitoring:
+  # Daily checks (notebook 09). Status = worst of ok / warn / critical.
+  window_days: 7                 # checks look at the last 7 days up to the run date
+  drift_warn: 0.10               # PSI vs the validation period
+  drift_critical: 0.25
+  drift_exempt: [card_prior_txn_count]   # grows by design (a card's history only grows)
+  alert_volume_warn: [0.5, 1.5]          # new alerts/day as a multiple of the review budget
+  alert_volume_critical: [0.25, 3.0]
+  backlog_warn_days: 1.0         # open alerts at day end, in days of review capacity
+  backlog_critical_days: 2.0
+  expired_warn: 0.05             # share of the window's alerts that expired unreviewed
+  expired_critical: 0.15
+  precision_warn: 0.50           # share of reviewed alerts confirmed as fraud
+  precision_critical: 0.30
+  matured_after_days: 60         # chargebacks arrive within 60 days; older cohorts are final
+  recall_warn: 0.80              # recall above threshold on the latest matured 30-day cohort
+  recall_critical: 0.70
+  null_increase_warn: 0.02       # rise in a feature's missing share vs the reference period
+  null_increase_critical: 0.10
+  label_bands: [0, 7, 30, 60]    # transaction-age bands (days) for the label-maturity view
+
+promotion:
+  # A newly trained model replaces @champion only if, on the validation period, it is
+  # at least as good on the primary metric and does not lose recall at the review budget.
+  primary_metric: pr_auc
+  min_primary_gain: 0.0          # >= 0: ties go to the incumbent only if below this gain
+  guard_metric: topk25_recall    # recall when reviewing the top 25 alerts/day
+  max_guard_drop: 0.01           # allowed drop in the guard metric (absolute)

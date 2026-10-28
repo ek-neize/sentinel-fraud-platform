@@ -1,0 +1,83 @@
+# promtool test rules deploy/prometheus/rules_test.yml   (run from deploy/prometheus/)
+rule_files:
+  - rules.yml
+evaluation_interval: 1m
+
+tests:
+  - name: alert rate doubles -> SentinelAlertRateHigh after 2m
+    interval: 1m
+    input_series:
+      - series: sentinel_transactions_scored_total{instance="api:8000", job="sentinel-api"}
+        values: 0+600x20                # 10/s
+      - series: sentinel_alerts_total{instance="api:8000", job="sentinel-api", risk_band="high"}
+        values: 0+6x10 66+60x10         # 1% of traffic, then 10%
+      - series: sentinel_reference_alert_rate{instance="api:8000", job="sentinel-api"}
+        values: 0.01x20
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: SentinelAlertRateHigh
+        exp_alerts: []
+      - eval_time: 19m
+        alertname: SentinelAlertRateHigh
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations:
+              summary: Share of transactions above the threshold is more than 2x validation
+              description: Review queue will overflow; check for input drift or an upstream change.
+
+  - name: model missing -> SentinelModelNotLoaded
+    interval: 1m
+    input_series:
+      - series: sentinel_model_loaded{instance="api:8000", job="sentinel-api"}
+        values: 1 1 0 0 0 0
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: SentinelModelNotLoaded
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: SentinelModelNotLoaded
+        exp_alerts:
+          - exp_labels: {severity: critical, instance: "api:8000", job: sentinel-api}
+            exp_annotations:
+              summary: API is up but has no model; every /score returns 503
+
+  - name: 5xx above 5% -> SentinelHighErrorRate
+    interval: 1m
+    input_series:
+      - series: sentinel_http_requests_total{endpoint="/score", status="200"}
+        values: 0+540x15
+      - series: sentinel_http_requests_total{endpoint="/score", status="500"}
+        values: 0+60x15                 # 10% errors
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: SentinelHighErrorRate
+        exp_alerts:
+          - exp_labels: {severity: critical}
+            exp_annotations:
+              summary: More than 5% of requests fail with a server error
+
+  - name: median amount triples -> SentinelAmountShift
+    interval: 1m
+    input_series:
+      - series: sentinel_input_amount_bucket{instance="api:8000", job="sentinel-api", le="25"}
+        values: 0+300x10 3000+0x10
+      - series: sentinel_input_amount_bucket{instance="api:8000", job="sentinel-api", le="50"}
+        values: 0+500x10 5000+100x10
+      - series: sentinel_input_amount_bucket{instance="api:8000", job="sentinel-api", le="100"}
+        values: 0+580x10 5800+200x10
+      - series: sentinel_input_amount_bucket{instance="api:8000", job="sentinel-api", le="250"}
+        values: 0+600x10 6000+500x10
+      - series: sentinel_input_amount_bucket{instance="api:8000", job="sentinel-api", le="+Inf"}
+        values: 0+600x10 6000+600x10
+      - series: sentinel_reference_amount_p50{instance="api:8000", job="sentinel-api"}
+        values: 22x20
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: SentinelAmountShift
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: SentinelAmountShift
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations:
+              summary: Median transaction amount is more than 2x validation (input drift)

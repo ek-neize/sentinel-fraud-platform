@@ -23,6 +23,7 @@ TABLES = [
     "alerts", "daily_ops", "card_history", "trend_daily", "trend_category", "trend_state",
     "monthly_perf", "drift", "eval_curve", "eval_strategies", "eval_intervals", "eval_fairness",
 ]  # fmt: skip
+OPTIONAL_TABLES = ["monitoring_checks", "label_maturity"]  # from notebook 09
 
 DEFAULT_SNAPSHOT = Path(__file__).resolve().parent / "snapshot"
 # AI-drafted case briefs (scripts/generate_briefs.py); used in both modes.
@@ -53,7 +54,7 @@ class Bundle:
 
 
 def _fix_types(name: str, df: pd.DataFrame) -> pd.DataFrame:
-    for c in ("event_ts", "created_day", "status_day", "day"):
+    for c in ("event_ts", "created_day", "status_day", "day", "as_of"):
         if c in df:
             df[c] = pd.to_datetime(df[c], errors="coerce")
             if getattr(df[c].dt, "tz", None) is not None:
@@ -63,11 +64,11 @@ def _fix_types(name: str, df: pd.DataFrame) -> pd.DataFrame:
 
 def _load_snapshot(folder: Path) -> Bundle:
     tables, missing = {}, []
-    for name in TABLES:
+    for name in TABLES + OPTIONAL_TABLES:
         f = folder / f"{name}.parquet"
         if f.exists():
             tables[name] = _fix_types(name, pd.read_parquet(f))
-        else:
+        elif name in TABLES:
             missing.append(name)
     meta_file = folder / "meta.json"
     meta = json.loads(meta_file.read_text()) if meta_file.exists() else {}
@@ -90,12 +91,13 @@ def _load_live(catalog: str, schema: str, warehouse_id: str) -> Bundle:
         ) as conn,
         conn.cursor() as cur,
     ):
-        for name in TABLES:
+        for name in TABLES + OPTIONAL_TABLES:
             try:
                 cur.execute(f"SELECT * FROM {catalog}.{schema}.dash_{name}")
                 tables[name] = _fix_types(name, cur.fetchall_arrow().to_pandas())
             except Exception:  # noqa: BLE001 - show which table is missing, keep going
-                missing.append(f"dash_{name}")
+                if name in TABLES:
+                    missing.append(f"dash_{name}")
         try:
             cur.execute(f"SELECT json FROM {catalog}.{schema}.dash_meta")
             meta = json.loads(cur.fetchone()[0])

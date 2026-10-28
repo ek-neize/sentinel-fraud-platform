@@ -11,12 +11,13 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src ./src
 COPY config ./config
+COPY scripts/make_demo_model.py scripts/traffic.py ./scripts/
 RUN pip install ".[ml,serve]"
 
-RUN useradd --create-home sentinel
+RUN useradd --create-home sentinel && mkdir -p /app/models && chown sentinel /app/models
 USER sentinel
 
-ENV SENTINEL_MODEL_PATH=/app/models/champion
+ENV SENTINEL_MODEL_PATH=/app/models/champion SENTINEL_HOME=/app
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=3s CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
 CMD ["uvicorn", "sentinel.serving.app:app", "--host", "0.0.0.0", "--port", "8000"]

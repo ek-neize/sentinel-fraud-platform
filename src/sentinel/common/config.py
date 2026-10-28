@@ -2,13 +2,27 @@
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+
+def _find_root() -> Path:
+    """Repo root: SENTINEL_HOME if set, else the source checkout this file lives in
+    (editable install), else the current directory (non-editable install, e.g. Docker
+    with WORKDIR /app containing config/)."""
+    if os.environ.get("SENTINEL_HOME"):
+        return Path(os.environ["SENTINEL_HOME"]).resolve()
+    here = Path(__file__).resolve().parents[3]
+    if (here / "config" / "assumptions.yaml").exists():
+        return here
+    return Path.cwd()
+
+
+REPO_ROOT = _find_root()
 CONFIG_DIR = REPO_ROOT / "config"
 DATA_DIR = REPO_ROOT / "data"
 RAW_DIR = DATA_DIR / "raw"

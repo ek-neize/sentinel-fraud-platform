@@ -2,6 +2,9 @@
 
     uvicorn sentinel.serving.app:app --port 8000
 
+Prometheus metrics at /metrics (requests, latency, scores, alerts, input amounts and the
+model's validation reference values used by the drift alerts in deploy/prometheus).
+
 The model is loaded once at startup from SENTINEL_MODEL_PATH (default `models/champion`,
 created by `scripts/export_model.py`), together with `sentinel_meta.json` (model version and
 the operating threshold chosen in Step 6). SENTINEL_THRESHOLD overrides the threshold.
@@ -20,7 +23,16 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import Response
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    CollectorRegistry,
+    Counter,
+    Gauge,
+    Histogram,
+    generate_latest,
+)
 from pydantic import BaseModel, ConfigDict, Field
 
 from sentinel.alerts.digest import DISCLAIMER
@@ -102,10 +114,14 @@ def risk_band(score: float, threshold: float) -> str:
 
 
 class ModelBundle:
-    def __init__(self, pipeline, threshold: float, version: str = "local"):
+    def __init__(
+        self, pipeline, threshold: float, version: str = "local", reference: dict | None = None
+    ):
         self.pipeline = pipeline
         self.threshold = float(threshold)
         self.version = str(version)
+        # Validation-period reference values (from sentinel_meta.json), for drift alerts.
+        self.reference = reference or {}
 
     @classmethod
     def from_path(cls, path: str | Path) -> ModelBundle:
@@ -115,7 +131,12 @@ class ModelBundle:
         meta_file = path / "sentinel_meta.json"
         meta = json.loads(meta_file.read_text()) if meta_file.exists() else {}
         threshold = float(os.environ.get("SENTINEL_THRESHOLD", meta.get("threshold", 0.5)))
-        return cls(mlflow.sklearn.load_model(str(path)), threshold, meta.get("version", "local"))
+        return cls(
+            mlflow.sklearn.load_model(str(path)),
+            threshold,
+            meta.get("version", "local"),
+            meta.get("reference"),
+        )
 
     def score(self, frame: pd.DataFrame, with_reasons: bool = True) -> list[ScoreResponse]:
         x = frame[NUMERIC + CATEGORICAL]
@@ -146,8 +167,77 @@ class ModelBundle:
         return out
 
 
+class Metrics:
+    """Prometheus metrics, one registry per app (so tests can create several apps)."""
+
+    SCORE_BUCKETS = (0.001, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 0.9, 0.99, 1.0)
+    AMOUNT_BUCKETS = (5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000)
+
+    def __init__(self):
+        r = self.registry = CollectorRegistry()
+        self.requests = Counter(
+            "sentinel_http_requests_total", "HTTP requests", ["endpoint", "status"], registry=r
+        )
+        self.latency = Histogram(
+            "sentinel_http_request_duration_seconds",
+            "Request latency",
+            ["endpoint"],
+            buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5),
+            registry=r,
+        )
+        self.scored = Counter(
+            "sentinel_transactions_scored_total", "Transactions scored", registry=r
+        )
+        self.alerts = Counter(
+            "sentinel_alerts_total",
+            "Transactions at or above the threshold",
+            ["risk_band"],
+            registry=r,
+        )
+        self.score = Histogram(
+            "sentinel_score", "Model score", buckets=self.SCORE_BUCKETS, registry=r
+        )
+        self.amount = Histogram(
+            "sentinel_input_amount",
+            "Transaction amount (USD) received",
+            buckets=self.AMOUNT_BUCKETS,
+            registry=r,
+        )
+        self.model_loaded = Gauge("sentinel_model_loaded", "1 if a model is loaded", registry=r)
+        self.model_info = Gauge("sentinel_model_info", "Loaded model", ["version"], registry=r)
+        self.threshold = Gauge("sentinel_threshold", "Operating threshold", registry=r)
+        self.ref_alert_rate = Gauge(
+            "sentinel_reference_alert_rate", "Share above threshold on validation", registry=r
+        )
+        self.ref_amount_p50 = Gauge(
+            "sentinel_reference_amount_p50", "Median amount on validation", registry=r
+        )
+
+    def set_model(self, b: ModelBundle | None) -> None:
+        self.model_loaded.set(1 if b else 0)
+        if b is None:
+            return
+        self.model_info.labels(version=b.version).set(1)
+        self.threshold.set(b.threshold)
+        if "alert_rate" in b.reference:
+            self.ref_alert_rate.set(b.reference["alert_rate"])
+        if "amount_p50" in b.reference:
+            self.ref_amount_p50.set(b.reference["amount_p50"])
+
+    def observe(self, frame: pd.DataFrame, results: list[ScoreResponse]) -> None:
+        self.scored.inc(len(results))
+        for amt in frame["amount"]:
+            self.amount.observe(float(amt))
+        for r in results:
+            self.score.observe(r.score)
+            if r.alert:
+                self.alerts.labels(risk_band=r.risk_band).inc()
+
+
 def create_app(bundle: ModelBundle | None = None) -> FastAPI:
     state: dict = {"bundle": bundle, "started": time.time(), "scored": 0}
+    metrics = Metrics()
+    metrics.set_model(bundle)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -155,9 +245,30 @@ def create_app(bundle: ModelBundle | None = None) -> FastAPI:
             path = os.environ.get("SENTINEL_MODEL_PATH", DEFAULT_MODEL_PATH)
             if Path(path).exists():
                 state["bundle"] = ModelBundle.from_path(path)
+        metrics.set_model(state["bundle"])
         yield
 
     app = FastAPI(title="Sentinel scoring API", version="1.0", lifespan=lifespan)
+
+    @app.get("/metrics", include_in_schema=False)
+    def prometheus_metrics():
+        return Response(generate_latest(metrics.registry), media_type=CONTENT_TYPE_LATEST)
+
+    @app.middleware("http")
+    async def record(request: Request, call_next):
+        if request.url.path == "/metrics":
+            return await call_next(request)
+        t0 = time.perf_counter()
+        status = 500
+        try:
+            response = await call_next(request)
+            status = response.status_code
+            return response
+        finally:
+            route = request.scope.get("route")
+            endpoint = getattr(route, "path", "unmatched")
+            metrics.latency.labels(endpoint=endpoint).observe(time.perf_counter() - t0)
+            metrics.requests.labels(endpoint=endpoint, status=str(status)).inc()
 
     def _bundle() -> ModelBundle:
         if state["bundle"] is None:
@@ -177,9 +288,11 @@ def create_app(bundle: ModelBundle | None = None) -> FastAPI:
 
     @app.post("/score", response_model=ScoreResponse)
     def score(txn: TransactionFeatures):
-        res = _bundle().score(txn.to_frame())[0]
+        frame = txn.to_frame()
+        res = _bundle().score(frame)
+        metrics.observe(frame, res)
         state["scored"] += 1
-        return res
+        return res[0]
 
     @app.post("/score/batch", response_model=list[ScoreResponse])
     def score_batch(txns: list[TransactionFeatures]):
@@ -189,6 +302,7 @@ def create_app(bundle: ModelBundle | None = None) -> FastAPI:
             raise HTTPException(413, "At most 1000 transactions per request.")
         frame = pd.concat([t.to_frame() for t in txns], ignore_index=True)
         res = _bundle().score(frame)
+        metrics.observe(frame, res)
         state["scored"] += len(res)
         return res
 

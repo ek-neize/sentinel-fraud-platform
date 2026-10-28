@@ -24,6 +24,8 @@ TABLES = [
     "alerts", "daily_ops", "card_history", "trend_daily", "trend_category", "trend_state",
     "monthly_perf", "drift", "eval_curve", "eval_strategies", "eval_intervals", "eval_fairness",
 ]  # fmt: skip
+# Written by notebook 09 (monitoring); older snapshots may not have them.
+OPTIONAL_TABLES = ["monitoring_checks", "label_maturity"]
 
 ALERT_COLUMNS = [
     "alert_id", "transaction_id", "event_ts", "created_day", "card_id", "merchant_name",
@@ -205,6 +207,7 @@ def build_snapshot(
     eval_tables: dict,
     model_info: dict,
     cfg: dict,
+    monitoring: tuple[pd.DataFrame, pd.DataFrame] | None = None,
 ) -> tuple[dict[str, pd.DataFrame], dict]:
     """Return ({table_name: DataFrame}, meta). See module docstring for inputs."""
     alerts = queue.reindex(columns=ALERT_COLUMNS).copy()
@@ -224,6 +227,8 @@ def build_snapshot(
         if len(eval_tables["fairness"])
         else eval_tables["fairness"],
     }
+    if monitoring is not None:
+        tables["monitoring_checks"], tables["label_maturity"] = monitoring
     k = int(model_info["operating_k"])
     test = scored[scored["split"] == "test"]
     meta = {

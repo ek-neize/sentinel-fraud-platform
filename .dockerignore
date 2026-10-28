@@ -9,3 +9,7 @@ tests
 **/__pycache__
 **/*.pyc
 .env
+dashboard
+eval
+docs
+deploy

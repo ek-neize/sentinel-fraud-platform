@@ -60,7 +60,7 @@ Full report: [`docs/results.md`](docs/results.md).
 | 7 | Alerting (email) + FastAPI batch scoring | ✅ |
 | 8 | Investigation dashboard (Streamlit) | ✅ |
 | 9 | GenAI investigation assistant (RAG over SOPs) + eval | ✅ |
-| 10 | Monitoring, drift, CI/CD | ⏳ next |
+| 10 | Monitoring, drift, CI/CD | ✅ |
 
 ## Architecture
 
@@ -394,6 +394,60 @@ recall against the rule-based gold SOPs is 82%, mostly a skipped night-time step
 [iteration log](docs/assistant_eval.md#iteration-log) records what changed from v1 to v2 and
 what is left.
 
+## Monitoring and CI/CD (Step 10)
+
+Two layers, because fraud labels arrive late (customer reports within days, chargebacks
+up to 60 days):
+
+**Batch monitoring in Databricks** (`notebooks/databricks/09_monitoring.py`,
+`src/sentinel/monitoring/checks.py`, thresholds in `config/assumptions.yaml` →
+`monitoring`). Every run checks, from the most to the least immediate:
+
+| Check | Needs labels? | Warn / critical |
+|---|---|---|
+| Input and score drift (PSI vs validation) | no | 0.10 / 0.25 |
+| Missing values in model inputs | no | +2 / +10 points |
+| New alerts per day vs the review budget | no | outside 0.5-1.5x / 0.25-3x |
+| Backlog (open alerts in days of capacity), expired alerts | no | 1 / 2 days; 5% / 15% |
+| Precision of reviewed alerts | dispositions (days) | below 50% / 30% |
+| Recall on the latest *matured* cohort (60+ days old) | complete labels | below 80% / 70% |
+
+Results go to `monitoring_checks`, `monitoring_label_maturity` and an append-only
+`monitoring_log`, and to the dashboard's **Monitoring** page. The label-maturity view shows
+why recent recall can't be trusted: for transactions under a week old only part of the
+eventual fraud is labelled yet. In the scheduled job a critical check fails the task, so
+the job's failure e-mail is the alert.
+
+**Scheduled pipeline as code** (`databricks.yml`, a Databricks Asset Bundle):
+`sentinel-daily` runs bronze → silver → gold → score and alert → monitoring → dashboard
+snapshot (paused by default); `sentinel-retrain` runs training and evaluation on demand.
+Training goes through a **champion/challenger gate** (`src/sentinel/models/promotion.py`): a
+new model becomes `@champion` only if its validation PR-AUC is at least the incumbent's and
+its recall at 25 alerts/day drops by no more than 1 point; otherwise it is registered as
+`@challenger` with the reason as a tag.
+
+**Live service monitoring with Docker Compose** (`docker-compose.yml`): the FastAPI scorer
+exposes Prometheus metrics at `/metrics` (requests, latency, scores, alerts, input
+amounts, plus the model's validation reference values); Prometheus evaluates alert rules
+(`deploy/prometheus/rules.yml`: API down, no model, 5xx rate, p95 latency, alert rate more
+than 2x validation, median amount more than 2x validation); Grafana shows a provisioned
+dashboard. A traffic generator replays demo transactions and switches to drifted data
+after 5 minutes, so the drift alerts fire on their own.
+
+```bash
+docker compose up --build        # first start trains a demo model inside the image (~1 min)
+# API http://localhost:8000/docs · Prometheus http://localhost:9090/alerts · Grafana http://localhost:3000
+docker compose down -v
+```
+
+**CI/CD** (`.github/workflows/`): `secrets` scans the full history with gitleaks (default
+rules plus an Anthropic-key rule in `.gitleaks.toml`); `test` runs lint and 136 tests;
+`monitoring-config` validates the Prometheus config and unit-tests every alert rule with
+`promtool`; `compose` starts the whole stack and checks that Prometheus scrapes scores and
+Grafana serves the dashboard; `docker` builds the API image; `deploy` validates and deploys
+the bundle when `DATABRICKS_HOST` / `DATABRICKS_TOKEN` secrets are set. Optional local
+hook: `pip install pre-commit && pre-commit install` blocks a commit that contains a secret.
+
 ## Repo layout
 
 ```
@@ -406,15 +460,18 @@ src/sentinel/models/         feature sets, LR/XGBoost pipelines, experiment runn
 src/sentinel/evaluation/     capacity metrics, alert policies, cost model, bootstrap CIs, fairness, report
 src/sentinel/alerts/         backlog queue, reason codes, daily operations, HTML digest, email
 src/sentinel/serving/        FastAPI scoring service (Dockerfile at repo root)
-src/sentinel/monitoring/     drift (PSI) for the dashboard and, later, scheduled monitoring
+src/sentinel/monitoring/     drift (PSI), daily checks, label-maturity view
 src/sentinel/dashboard_export.py   builds the dashboard tables (notebook 08 + mock snapshot)
 src/sentinel/assistant/      case files, SOP retrieval, LLM providers, brief checks, evaluation
 eval/assistant/              fixed eval set (cases.jsonl) and latest results
 dashboard/                   Streamlit app (self-contained: snapshot or live Databricks data)
-notebooks/databricks/        00_setup … 06_evaluate, 07_score_and_alert, 08_dashboard_snapshot
+notebooks/databricks/        00_setup … 06_evaluate, 07_score_and_alert, 08_dashboard_snapshot, 09_monitoring
 scripts/                     download, build reference data, profile, producer, deploy/upload
 schemas/                     JSON Schemas for Kafka topics
 docs/                        data profile, feature dictionary, results, SOPs, assistant evaluation
 tests/                       leakage, contract, producer, bronze/silver/gold transform tests (local Spark)
-.github/workflows/ci.yml     lint, tests (incl. local Spark), mock smoke runs, Docker build + health check
+.github/workflows/           ci: secret scan, lint, tests, smoke runs, promtool, Compose stack, Docker;
+                             deploy: Databricks Asset Bundle
+databricks.yml               scheduled jobs (daily pipeline, retrain) as code
+docker-compose.yml, deploy/  API + traffic + Prometheus (rules) + Grafana (dashboard)
 ```
