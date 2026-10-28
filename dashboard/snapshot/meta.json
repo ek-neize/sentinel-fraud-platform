@@ -1,0 +1,101 @@
+{
+  "generated_at": "2026-10-28 12:54 UTC",
+  "model": {
+    "name": "fraud_model",
+    "version": "3",
+    "experiment": "xgb_full_d8",
+    "threshold": 0.019366640597581863,
+    "operating_k": 20,
+    "pr_auc_validation": 0.9775224718863728
+  },
+  "operating_k": 20,
+  "max_age_days": 3,
+  "priority": "score",
+  "costs": {
+    "investigation_cost_per_alert": 25.0,
+    "escalation_cost_per_case": 75.0,
+    "missed_fraud_loss_rate": 0.85,
+    "missed_fraud_fixed_cost": 15.0,
+    "false_positive_friction_cost": 5.0,
+    "caught_fraud_recovery_rate": 0.9
+  },
+  "test_period": [
+    "2020-07-01",
+    "2020-12-31"
+  ],
+  "test_txns": 525661,
+  "test_frauds": 2012,
+  "headline": {
+    "capped": {
+      "recall": 0.893141153081511,
+      "precision": 0.6677814938684504,
+      "amount_recall": 0.9302708009694829,
+      "fp_per_1000_txns": 1.7007158606021753,
+      "net_benefit": 574826.99745,
+      "alerts_per_day": 14.625
+    },
+    "backlog_score": {
+      "recall": 0.9438369781312127,
+      "precision": 0.6546018614270941,
+      "amount_recall": 0.9747668918369161,
+      "fp_per_1000_txns": 1.9061714679232433,
+      "net_benefit": 599000.571,
+      "alerts_per_day": 15.766304347826088
+    },
+    "backlog_expected_loss": {
+      "recall": 0.9204771371769384,
+      "precision": 0.6410522672204915,
+      "amount_recall": 0.9870618336545053,
+      "fp_per_1000_txns": 1.972754303629145,
+      "net_benefit": 611916.0072499999,
+      "alerts_per_day": 15.701086956521738
+    },
+    "rule": {
+      "recall": 0.20377733598409542,
+      "precision": 0.11141304347826086,
+      "amount_recall": 0.29121555851506026,
+      "fp_per_1000_txns": 6.220739221665674,
+      "net_benefit": 103207.77969999996,
+      "alerts_per_day": 20.0
+    },
+    "baseline": {
+      "recall": 0.6878727634194831,
+      "precision": 0.49927849927849927,
+      "amount_recall": 0.8426674031100899,
+      "fp_per_1000_txns": 2.6404850274226166,
+      "net_benefit": 524071.06805,
+      "alerts_per_day": 15.065217391304348
+    },
+    "overtime": {
+      "recall": 0.9652087475149106,
+      "precision": 0.6325732899022801,
+      "amount_recall": 0.9887530844660828,
+      "fp_per_1000_txns": 2.1458696764644896,
+      "net_benefit": 602907.5068999999,
+      "alerts_per_day": 16.684782608695652
+    },
+    "capped_ci": {
+      "recall": [
+        0.8579766477869086,
+        0.9236926991650221
+      ],
+      "precision": [
+        0.6286991954013647,
+        0.7022211190708093
+      ],
+      "amount_recall": [
+        0.9018319841101777,
+        0.9552801219450988
+      ],
+      "fp_per_1000_txns": [
+        1.5472542755109213,
+        1.8675003563782298
+      ],
+      "net_benefit": [
+        509925.1816400002,
+        634922.8926250003
+      ]
+    }
+  },
+  "synthetic_data": true
+}
