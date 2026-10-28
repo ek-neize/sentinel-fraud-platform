@@ -6,9 +6,35 @@
 **Business question:** How can a financial institution identify suspicious
 transactions quickly while keeping the number of unnecessary investigations manageable?
 
-_Headline results go here once the model is evaluated on the held-out test set
-(e.g. "At 100 alerts/day, Sentinel catches X% of fraud dollars with Y false
-positives per 1,000 transactions")._
+## Results (held-out test period, Jul–Dec 2020)
+
+With a review team sized for **20 alerts/day**, the XGBoost champion caught **89% of fraud
+(95% CI 86–92%) and 93% of fraud dollars**, with **67% of alerts being real fraud** and
+1.7 false positives per 1,000 transactions, for an estimated **$575k net benefit**
+(CI $510k–$635k) over doing nothing. The rules-only watchlist with the same budget caught
+20%; the logistic-regression baseline caught 69%.
+
+| Strategy (20 alerts/day) | Fraud caught | Alert precision | $ caught | Net benefit |
+|---|---|---|---|---|
+| Watchlist rule (top 20 by amount) | 20.4% | 11.1% | 29.1% | $103k |
+| Logistic regression baseline | 68.8% | 49.9% | 84.3% | $524k |
+| **XGBoost champion** | **89.3%** | **66.8%** | **93.0%** | **$575k** |
+| XGBoost, no daily cap (overtime) | 96.5% | 63.3% | 98.9% | $603k |
+
+What the numbers say:
+- **Team size has a sweet spot.** Net benefit peaks at 20–25 alerts/day; beyond that, extra
+  reviews mostly land on legitimate customers (at 100/day precision falls to 12%).
+- **The bottleneck is busy days, not the model.** Fraud arrives in bursts: on 49 of 184 days
+  the fixed threshold produced more than 20 alerts, and capping review left 145 frauds
+  unreviewed. Without the cap the same model catches 96.5% at 16.7 alerts/day on average, so
+  a backlog queue or flexible peak-day staffing should recover much of that gap (tested in
+  Step 7).
+- **Protected attributes are excluded** from the model at a cost of 0.004 validation PR-AUC.
+  Alert and false-positive rates stay within 0.8–1.25 of the overall rate for every gender and
+  age group; recall is lower for women (85% vs. 94%), which is flagged for monitoring.
+- Synthetic data (Sparkov) makes absolute numbers optimistic; the method is the point.
+
+Full report: [`docs/results.md`](docs/results.md).
 
 ---
 
