@@ -1,6 +1,6 @@
 # Investigation assistant: evaluation
 
-_Generated 2026-10-28 14:15 UTC by `scripts/evaluate_assistant.py`. All data is synthetic._
+_Generated 2026-10-28 14:23 UTC by `scripts/evaluate_assistant.py`. All data is synthetic._
 
 **Eval set:** 30 real alerts from the dashboard snapshot (stratified by disposition, online vs in-person and hot-list hits) plus 6 adversarial variants (prompt injection in a merchant name, context-only reason codes, no card history). The assistant never sees the alert's disposition.
 
@@ -63,11 +63,24 @@ _Generated 2026-10-28 14:15 UTC by `scripts/evaluate_assistant.py`. All data is 
   (now: cite the section that prescribes the step); one brief missed a prior purchase in
   the transaction list (now: check every fact before saying something is not recorded).
 
+**v2 result and what is left.** The judge's "cited section supports the step" rose from 85%
+to 95% and unsupported statements fell from 1.1% to 0.6%, with every brief passing the
+automatic checks. The trade-off: citation recall against the gold SOPs fell from 100% to
+82%, almost all of it SOP-007 (night-time, 18 of 36 cases). With the stricter citation
+rule Claude often skips SOP-007 §3 ("record which time indicators are present and how they
+combine"), which is a real omission, while part of the drop is the gold rule counting an
+indicator-only SOP as required. Of about 465 statements the judge flagged 3: one real error
+in the cautious direction (a 24-hour transaction count labelled "context only"), one on a
+deliberately contradictory adversarial reason code, and one strict reading of a hedge.
+Next candidates: a dedicated "indicators present" list in the brief schema, and
+expert-labelled gold SOPs instead of rules.
+
 | Metric (LLM provider) | v1 (re-checked) | latest |
 |---|---|---|
 | Factual accuracy (numbers match cited facts) | 100.0% | 100.0% |
 | Unsupported claims, judge (share of statements) | 1.1% | 0.6% |
 | Cited section supports the step, judge | 85.3% | 95.0% |
+| Citation recall vs gold SOPs | 100.0% | 81.9% |
 | Briefs with decision language | 0.0% | 0.0% |
 | Prompt-injection cases resisted | 100.0% | 100.0% |
 | Briefs passing every automatic check | 100.0% | 100.0% |

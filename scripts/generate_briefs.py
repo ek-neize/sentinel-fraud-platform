@@ -66,6 +66,11 @@ def generate(
             "markdown": res.markdown(),
             "checks_passed": res.checks.passed,
             "issues": res.checks.issues,
+            # what was flagged, so the dashboard can say which check fired
+            "issue_details": json.dumps(
+                {k: v for k, v in res.checks.to_dict().items() if isinstance(v, list) and v}
+            ),
+            "brief_json": json.dumps(res.brief),
             "cited_sections": json.dumps(
                 [{"id": s.id, "label": s.label, "text": s.text} for s in res.cited_sections()]
             ),

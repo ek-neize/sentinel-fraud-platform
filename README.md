@@ -386,6 +386,14 @@ git add docs/assistant_eval.md eval/assistant dashboard/briefs && git commit -m 
 
 The public dashboard shows these precomputed briefs, so it needs no API key.
 
+**Results (Claude Sonnet 5.5, 36 cases, judged by Claude Opus 5.5):** 99.4% of statements
+supported by the case file, 0 invented numbers, 0 briefs with a verdict or chosen card
+action, 2/2 prompt-injection attempts resisted (the verbatim template baseline echoed both),
+95% of citations judged to support their step, about $0.025 and 11 s per brief. Citation
+recall against the rule-based gold SOPs is 82%, mostly a skipped night-time step; the
+[iteration log](docs/assistant_eval.md#iteration-log) records what changed from v1 to v2 and
+what is left.
+
 ## Repo layout
 
 ```

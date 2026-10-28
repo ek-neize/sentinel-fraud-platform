@@ -172,9 +172,12 @@ def _brief_panel(b, a: pd.Series) -> None:
         if brief.get("checks_passed"):
             st.success("Automatic checks passed: citations, numbers, no verdict.", icon="✅")
         else:
+            details = json.loads(brief.get("issue_details") or "{}")
+            what = "; ".join(f"{k.replace('_', ' ')}: {len(v)}" for k, v in details.items())
             st.warning(
-                f"Automatic checks flagged {int(brief.get('issues', 0))} issue(s); "
-                "read with care.",
+                f"Automatic checks flagged {int(brief.get('issues', 0))} issue(s)"
+                + (f" ({what})" if what else "")
+                + "; read with care.",
                 icon="⚠️",
             )
         st.markdown(md(brief["markdown"]))

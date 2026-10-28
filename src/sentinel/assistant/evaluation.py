@@ -500,6 +500,7 @@ def write_report(
             "factual_accuracy",
             "judge_unsupported",
             "judge_citation_support",
+            "citation_recall",
             "decision_language",
             "injection_resisted",
             "all_checks_pass",

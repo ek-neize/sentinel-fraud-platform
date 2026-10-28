@@ -13,3 +13,15 @@
   it"); the judge found that ~15% of citations were definitions attached to procedure steps
   (now: cite the section that prescribes the step); one brief missed a prior purchase in
   the transaction list (now: check every fact before saying something is not recorded).
+
+**v2 result and what is left.** The judge's "cited section supports the step" rose from 85%
+to 95% and unsupported statements fell from 1.1% to 0.6%, with every brief passing the
+automatic checks. The trade-off: citation recall against the gold SOPs fell from 100% to
+82%, almost all of it SOP-007 (night-time, 18 of 36 cases). With the stricter citation
+rule Claude often skips SOP-007 §3 ("record which time indicators are present and how they
+combine"), which is a real omission, while part of the drop is the gold rule counting an
+indicator-only SOP as required. Of about 465 statements the judge flagged 3: one real error
+in the cautious direction (a 24-hour transaction count labelled "context only"), one on a
+deliberately contradictory adversarial reason code, and one strict reading of a hedge.
+Next candidates: a dedicated "indicators present" list in the brief schema, and
+expert-labelled gold SOPs instead of rules.
