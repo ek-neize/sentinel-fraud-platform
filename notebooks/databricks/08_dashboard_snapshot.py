@@ -80,6 +80,7 @@ print(MODEL_INFO)
 # DBTITLE 1,Load inputs (only the columns the dashboard needs)
 def to_pd(sdf):
     pdf = sdf.toPandas()
+    pdf.attrs = {}  # serverless attaches PlanMetrics here; they break Parquet/JSON writes
     for c in pdf.columns:
         if str(pdf[c].dtype).startswith("datetime64") and getattr(pdf[c].dt, "tz", None):
             pdf[c] = pdf[c].dt.tz_convert("UTC").dt.tz_localize(None)

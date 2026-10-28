@@ -129,3 +129,16 @@ def test_dashboard_cost_model_matches_evaluation():
         }
         s["caught_amt"] = s["fraud_amt"] * rng.random()
         assert dash_costs(s, c) == pytest.approx(_costs(s, c))
+
+
+def test_write_snapshot_ignores_unserializable_attrs(tmp_path):
+    """Databricks serverless toPandas() leaves PlanMetrics objects in df.attrs."""
+    import pandas as pd
+
+    from sentinel.dashboard_export import write_snapshot
+
+    df = pd.DataFrame({"a": [1, 2]})
+    df.attrs["metrics"] = [object()]
+    write_snapshot({"t": df}, {"x": 1}, tmp_path)
+    assert pd.read_parquet(tmp_path / "t.parquet")["a"].tolist() == [1, 2]
+    assert df.attrs  # caller's frame untouched

@@ -250,6 +250,10 @@ def write_snapshot(tables: dict[str, pd.DataFrame], meta: dict, out_dir: str | P
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     for name, df in tables.items():
+        # Spark Connect's toPandas() puts PlanMetrics objects in df.attrs; pandas would
+        # try to JSON-encode them into the Parquet metadata. They are never needed here.
+        df = df.copy(deep=False)
+        df.attrs = {}
         df.to_parquet(
             out / f"{name}.parquet",
             index=False,
