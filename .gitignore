@@ -15,5 +15,7 @@ data/replay/
 *.pem
 api-key*.txt
 kaggle.json
-models/
+# exported model files at the repo root only (not src/sentinel/models/)
+/models/
 data/alerts/
+build/
