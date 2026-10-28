@@ -261,13 +261,13 @@ and `@baseline`. Results: [`docs/results.md`](docs/results.md).
 
 ```mermaid
 flowchart LR
-    GF[(gold_features)] --> S[07_score_and_alert<br/>fraud_model@champion<br/>operating threshold]
+    GF[(gold_features)] --> S["07_score_and_alert<br/>fraud_model@champion<br/>operating threshold"]
     S --> Q{{Backlog queue<br/>top-K/day by priority<br/>3-day expiry}}
     Q --> AQ[(alert_queue<br/>status, reasons)]
     Q --> DS[(alert_daily_summary)]
-    Q --> H[/digest_YYYY-MM-DD.html<br/>UC volume/]
+    Q --> H[/"digest_YYYY-MM-DD.html<br/>UC volume"/]
     H -- send_digest.py --> E[Gmail SMTP<br/>optional]
-    M[[fraud_model@champion]] -- export_model.py --> API[FastAPI /score<br/>Docker]
+    M[["fraud_model@champion"]] -- export_model.py --> API["FastAPI /score<br/>Docker"]
 ```
 
 - **Operating point from Step 6:** the champion model version carries `operating_threshold`
