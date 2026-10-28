@@ -66,7 +66,10 @@ def describe(feature: str, row: pd.Series) -> str:
             return f"amount is {ratio:.1f}x this card's average"
         return "first transactions on this card (no spending history)"
     if feature in ("amount", "log_amount"):
-        return f"amount {_money(row.get('amount', np.expm1(v) if pd.notna(v) else 0))}"
+        amt = row.get("amount")
+        if amt is None or pd.isna(amt):
+            amt = np.expm1(row.get("log_amount", 0) or 0)
+        return f"amount {_money(amt)}"
     if feature in ("amt_to_prior_max", "card_prior_amt_max"):
         r = row.get("amt_to_prior_max")
         return (

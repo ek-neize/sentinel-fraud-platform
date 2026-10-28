@@ -19,6 +19,7 @@ spark = ["pyspark>=3.5"]  # local tests of notebook transforms (needs Java 17+)
 ml = ["scikit-learn>=1.4", "xgboost>=2.0", "mlflow-skinny>=2.14", "matplotlib>=3.8"]
 serve = ["fastapi>=0.110", "uvicorn>=0.29", "python-dotenv>=1.0"]
 notify = ["databricks-sdk>=0.30", "python-dotenv>=1.0"]
+dashboard = ["streamlit>=1.40,<2", "altair>=5"]
 dev = ["pytest>=8", "ruff>=0.4", "httpx>=0.27"]
 
 [build-system]

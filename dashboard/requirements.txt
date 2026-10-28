@@ -1,0 +1,8 @@
+# Dashboard only (Streamlit Community Cloud and Databricks Apps install this file).
+streamlit>=1.40,<2
+pandas>=2.1
+pyarrow>=14
+altair>=5
+# live mode (Databricks App); unused in snapshot mode
+databricks-sql-connector>=3.4
+databricks-sdk>=0.30

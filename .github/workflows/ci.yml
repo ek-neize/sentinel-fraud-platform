@@ -19,7 +19,7 @@ jobs:
           distribution: temurin
           java-version: "17"
       - name: Install
-        run: pip install -e ".[dev,stream,spark,ml,serve]"
+        run: pip install -e ".[dev,stream,spark,ml,serve,dashboard]"
       - name: Lint
         run: |
           ruff check src tests scripts notebooks
@@ -34,6 +34,7 @@ jobs:
           python scripts/run_producer.py --sink file --max-events 20000
           python scripts/train_local.py --mock --only logreg_full xgb_full_d4
           python scripts/evaluate_local.py --mock --bootstrap 200
+          python scripts/build_mock_snapshot.py --out /tmp/snapshot --days 10 --bootstrap 50
 
   docker:
     runs-on: ubuntu-latest

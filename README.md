@@ -55,8 +55,8 @@ Full report: [`docs/results.md`](docs/results.md).
 | 5 | Models: logistic regression baseline vs XGBoost (MLflow) | ✅ |
 | 6 | Business evaluation: PR-AUC, recall@capacity, cost, CIs | ✅ |
 | 7 | Alerting (email) + FastAPI batch scoring | ✅ |
-| 8 | Investigation dashboard (Streamlit) | ⏳ next |
-| 9 | GenAI investigation assistant (RAG over SOPs) + eval | |
+| 8 | Investigation dashboard (Streamlit) | ✅ |
+| 9 | GenAI investigation assistant (RAG over SOPs) + eval | ⏳ next |
 | 10 | Monitoring, drift, CI/CD | |
 
 ## Architecture
@@ -296,6 +296,43 @@ python scripts/export_model.py                              # champion -> models
 docker build -t sentinel-api . && docker run -p 8000:8000 -v "$PWD/models:/app/models:ro" sentinel-api
 ```
 
+## Investigation dashboard (Step 8)
+
+One Streamlit app, two data sources behind the same tables:
+
+| | Public app (Streamlit Community Cloud) | Databricks App |
+|---|---|---|
+| Data | `dashboard/snapshot/*.parquet` committed to the repo | `dash_*` Delta tables via a SQL warehouse |
+| Mode | `SENTINEL_DATA_MODE=snapshot` (default) | `SENTINEL_DATA_MODE=live` (set in `dashboard/app.yaml`) |
+| Refresh | run notebook 08, `scripts/pull_snapshot.py`, commit | run notebooks 07 → 08 |
+
+Pages: **Overview** (headline results, daily queue operations) · **Alert queue** (filterable
+queue, case view separating recorded facts from model signals, the card's 7-day history up to
+the alert) · **Trends** (fraud and alerts per day, by category and state) · **Model & drift**
+(strategies, capacity curve, monthly precision/recall, PSI drift heatmap, fairness) ·
+**Capacity planner** (pick a team size and edit the cost assumptions; costs are recomputed
+from the evaluation's sufficient statistics).
+
+```bash
+# local, from mock data
+pip install -e ".[ml,dashboard]"
+python scripts/build_mock_snapshot.py --out /tmp/snap
+SENTINEL_SNAPSHOT_DIR=/tmp/snap streamlit run dashboard/app.py
+
+# real data: Databricks notebook 08_dashboard_snapshot, then
+pip install -e ".[notify]"
+python scripts/pull_snapshot.py && git add dashboard/snapshot && git commit -m "Update dashboard snapshot" && git push
+```
+
+- **Streamlit Community Cloud:** New app → repo `ek-neize/sentinel-fraud-platform`, branch
+  `main`, main file `dashboard/app.py` (dependencies from `dashboard/requirements.txt`).
+- **Databricks App:** Compute → Apps → Create → custom; source code path
+  `<Git folder>/dashboard`; add a *SQL warehouse* resource with key `sql-warehouse`; grant the
+  app's service principal `USE CATALOG`, `USE SCHEMA` and `SELECT` on `workspace.sentinel`.
+  Free Edition stops apps after 24 h; restart from the Apps page.
+- `card_prior_txn_count` shows "major" PSI **by design** (a card's history only grows); the
+  dashboard labels it as expected drift rather than a data problem.
+
 ## Repo layout
 
 ```
@@ -308,7 +345,10 @@ src/sentinel/models/         feature sets, LR/XGBoost pipelines, experiment runn
 src/sentinel/evaluation/     capacity metrics, alert policies, cost model, bootstrap CIs, fairness, report
 src/sentinel/alerts/         backlog queue, reason codes, daily operations, HTML digest, email
 src/sentinel/serving/        FastAPI scoring service (Dockerfile at repo root)
-notebooks/databricks/        00_setup … 05_train_models, 06_evaluate, 07_score_and_alert
+src/sentinel/monitoring/     drift (PSI) for the dashboard and, later, scheduled monitoring
+src/sentinel/dashboard_export.py   builds the dashboard tables (notebook 08 + mock snapshot)
+dashboard/                   Streamlit app (self-contained: snapshot or live Databricks data)
+notebooks/databricks/        00_setup … 06_evaluate, 07_score_and_alert, 08_dashboard_snapshot
 scripts/                     download, build reference data, profile, producer, deploy/upload
 schemas/                     JSON Schemas for Kafka topics
 docs/                        data profile, feature dictionary, SOPs (for the GenAI assistant)

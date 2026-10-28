@@ -1,0 +1,13 @@
+# Databricks Apps config. Source code path: <Git folder>/dashboard
+# Add an app resource: SQL warehouse, key "sql-warehouse", permission "Can use".
+# Grant the app's service principal USE CATALOG / USE SCHEMA / SELECT on the schema.
+command: ["streamlit", "run", "app.py"]
+env:
+  - name: SENTINEL_DATA_MODE
+    value: live
+  - name: SENTINEL_CATALOG
+    value: workspace
+  - name: SENTINEL_SCHEMA
+    value: sentinel
+  - name: DATABRICKS_WAREHOUSE_ID
+    valueFrom: sql-warehouse
