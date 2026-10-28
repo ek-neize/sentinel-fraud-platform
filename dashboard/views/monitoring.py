@@ -128,10 +128,15 @@ def render(b) -> None:
         .properties(height=alt.Step(34))
     )
     show(bars, m, table_label="Show label-maturity table")
-    young = m.iloc[0]
+    with_fraud = m[m["frauds_final"] > 0]
+    if with_fraud.empty:
+        return
+    young = with_fraud.iloc[0]
+    empty = m[m["frauds_final"] == 0]["age_band"].tolist()
     st.caption(
-        f"For transactions under a week old only {pct(young['label_coverage'], 0)} of the fraud "
-        "that will eventually be reported is labelled yet, so performance on recent data is "
-        "measured on an incomplete, biased sample (fast customer reports, not slow "
+        f"For transactions {young['age_band']} old only {pct(young['label_coverage'], 0)} of the "
+        "fraud that will eventually be reported is labelled yet, so performance on recent data "
+        "is measured on an incomplete, biased sample (fast customer reports, not slow "
         "chargebacks). This is why recall is monitored on matured cohorts."
+        + (f" No fraud is recorded for {', '.join(map(str, empty))} in this data." if empty else "")
     )
