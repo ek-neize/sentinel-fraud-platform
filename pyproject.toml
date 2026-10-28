@@ -40,6 +40,10 @@ line-length = 100
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "W"]
 
+[tool.ruff.lint.isort]
+# Explicit, so import grouping does not depend on how ruff detects the src/ layout.
+known-first-party = ["sentinel"]
+
 [tool.ruff.lint.per-file-ignores]
 # Databricks notebooks: spark/dbutils/display are injected globals; MAGIC lines are long.
 "notebooks/databricks/*.py" = ["F821", "E501", "I001", "E402"]
